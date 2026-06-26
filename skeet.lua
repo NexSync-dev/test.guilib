@@ -171,6 +171,7 @@ function library:CreateWindow(Properties)
 		Parent = InnerBorder_InnerFrame_Tabs,
 		FillDirection = "Vertical",
 		HorizontalAlignment = "Left",
+		SortOrder = Enum.SortOrder.LayoutOrder,
 		VerticalAlignment = "Top"
 	})
 	local InnerFrame_Tabs_Padding = utility:RenderObject("UIPadding", {
@@ -339,7 +340,7 @@ function library:CreateWindow(Properties)
 	local WindowObj = setmetatable(Window, library)
 	WindowObj.CreateTab = WindowObj.CreatePage
 
-	local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547"})
+	local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999})
 	local configSection = settings_page:CreateSection({Name = "Configuration", Size = 150, Side = "Left"})
 	
 	configSection:CreateKeybind({
@@ -448,7 +449,7 @@ function library:CreateWindow(Properties)
 		local PlaceId = game.PlaceId
 		local JobId = game.JobId
 		local success, servers = pcall(function()
-			return HttpService:JSONDecode(game:HttpGet("https://games.roproxy.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+			return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
 		end)
 		if success and servers and servers.data then
 			local candidateServers = {}
@@ -510,6 +511,7 @@ function library:CreatePage(Properties)
 		BackgroundTransparency = 1,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
+		LayoutOrder = Properties.LayoutOrder or #Page.Window.Pages + 1,
 		Parent = Page.Window["TabsHolder"],
 		Size = UDim2.new(1, 0, 0, 72)
 	})
@@ -2310,18 +2312,8 @@ function sections:CreateColorpicker(Properties)
 			Size = UDim2.new(0, 17, 0, 152),
 			ZIndex = 6
 		})
-		local Transparency_Picker_Outline = utility:RenderObject("Frame", {
-			BackgroundColor3 = Color3.fromRGB(12, 12, 12),
-			BackgroundTransparency = 0,
-			BorderColor3 = Color3.fromRGB(0, 0, 0),
-			BorderSizePixel = 0,
-			Parent = Open_Outline_Frame,
-			Position = UDim2.new(0, 2, 1, -14),
-			Size = UDim2.new(0, 152, 0, 12),
-			ZIndex = 6
-		})
 		local ValSat_Picker_Color = utility:RenderObject("Frame", {
-			BackgroundColor3 = Color3.fromRGB(255, 12, 12),
+			BackgroundColor3 = Color3.fromRGB(255, 0, 0),
 			BackgroundTransparency = 0,
 			BorderColor3 = Color3.fromRGB(0, 0, 0),
 			BorderSizePixel = 0,
@@ -2330,38 +2322,84 @@ function sections:CreateColorpicker(Properties)
 			Size = UDim2.new(1, -2, 1, -2),
 			ZIndex = 6
 		})
+		local ValSat_Picker_Image = utility:RenderObject("ImageLabel", {
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Parent = ValSat_Picker_Color,
+			Size = UDim2.new(1, 0, 1, 0),
+			ZIndex = 6,
+			Image = "rbxassetid://4155801252"
+		})
+		local ValSat_Picker_Cursor = utility:RenderObject("Frame", {
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BorderColor3 = Color3.fromRGB(0, 0, 0),
+			BorderSizePixel = 1,
+			Parent = ValSat_Picker_Color,
+			Size = UDim2.new(0, 4, 0, 4),
+			ZIndex = 7
+		})
+		local Hue_Picker_Color = utility:RenderObject("Frame", {
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BorderSizePixel = 0,
+			Parent = Hue_Picker_Outline,
+			Position = UDim2.new(0, 1, 0, 1),
+			Size = UDim2.new(1, -2, 1, -2),
+			ZIndex = 6
+		})
+		local Hue_Picker_Gradient = utility:RenderObject("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
+				ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+				ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+				ColorSequenceKeypoint.new(0.50, Color3.fromRGB(0, 255, 255)),
+				ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
+				ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
+				ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0))
+			}),
+			Rotation = 90,
+			Parent = Hue_Picker_Color
+		})
+		local Hue_Picker_Cursor = utility:RenderObject("Frame", {
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BorderColor3 = Color3.fromRGB(0, 0, 0),
+			BorderSizePixel = 1,
+			Parent = Hue_Picker_Color,
+			Size = UDim2.new(1, 0, 0, 4),
+			ZIndex = 7
+		})
+		
+		local ColorH, ColorS, ColorV = Content.State:ToHSV()
 
-		function Content.Content:Close()
-			Content.Content.Open = false
-			for _, Value in ipairs(Connections) do
-				utility:DisconnectConnection(Value)
-			end
-			utility:DisconnectConnection(InputCheck)
-			utility:DestroyObject(ValSat_Picker_Color)
-			utility:DestroyObject(Transparency_Picker_Outline)
-			utility:DestroyObject(Hue_Picker_Outline)
-			utility:DestroyObject(ValSat_Picker_Outline)
-			utility:DestroyObject(Open_Outline_Frame)
-			utility:DestroyObject(Open_Holder_Outline)
-			utility:DestroyObject(Open_Holder_Button)
-			utility:DestroyObject(Content_Open_Holder)
-			function Content.Content:Refresh() end
-			InputCheck = nil
-			Connections = nil
+		local function UpdateColor()
+			local color = Color3.fromHSV(ColorH, ColorS, ColorV)
+			Content:Set(color)
+			ValSat_Picker_Color.BackgroundColor3 = Color3.fromHSV(ColorH, 1, 1)
+			ValSat_Picker_Cursor.Position = UDim2.new(ColorS, -2, 1 - ColorV, -2)
+			Hue_Picker_Cursor.Position = UDim2.new(0, 0, ColorH, -2)
 		end
 
-		function Content.Content:Refresh() end
-		Content.Content.Open = true
-		Content.Section.Content = Content.Content
-		
-		InputCheck = utility:CreateConnection(uis.InputBegan, function(Input)
+		local ValSatDragging = false
+		local HueDragging = false
+
+		local InputBegan = utility:CreateConnection(uis.InputBegan, function(Input)
 			if Content.Content.Open and Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				local Mouse = utility:MouseLocation()
 				local posOpen = Content_Open_Holder.AbsolutePosition
 				local sizeOpen = Content_Open_Holder.AbsoluteSize
 				local posColor = Content_Holder.AbsolutePosition
 				local sizeColor = Content_Holder.AbsoluteSize
-				if not (Mouse.X > posOpen.X and Mouse.Y > posOpen.Y and Mouse.X < posOpen.X + sizeOpen.X and Mouse.Y < posOpen.Y + sizeOpen.Y) then
+				
+				local vsPos = ValSat_Picker_Color.AbsolutePosition
+				local vsSize = ValSat_Picker_Color.AbsoluteSize
+				local hPos = Hue_Picker_Color.AbsolutePosition
+				local hSize = Hue_Picker_Color.AbsoluteSize
+
+				if Mouse.X >= vsPos.X and Mouse.X <= vsPos.X + vsSize.X and Mouse.Y >= vsPos.Y and Mouse.Y <= vsPos.Y + vsSize.Y then
+					ValSatDragging = true
+				elseif Mouse.X >= hPos.X and Mouse.X <= hPos.X + hSize.X and Mouse.Y >= hPos.Y and Mouse.Y <= hPos.Y + hSize.Y then
+					HueDragging = true
+				elseif not (Mouse.X > posOpen.X and Mouse.Y > posOpen.Y and Mouse.X < posOpen.X + sizeOpen.X and Mouse.Y < posOpen.Y + sizeOpen.Y) then
 					if not (Mouse.X > posColor.X and Mouse.Y > posColor.Y and Mouse.X < posColor.X + sizeColor.X and Mouse.Y < posColor.Y + sizeColor.Y) then
 						if Content.Content.Open then
 							Content.Section:CloseContent()
@@ -2370,6 +2408,66 @@ function sections:CreateColorpicker(Properties)
 				end
 			end
 		end)
+
+		local InputChanged = utility:CreateConnection(uis.InputChanged, function(Input)
+			if Content.Content.Open and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
+				local Mouse = utility:MouseLocation()
+				if ValSatDragging then
+					local vsPos = ValSat_Picker_Color.AbsolutePosition
+					local vsSize = ValSat_Picker_Color.AbsoluteSize
+					ColorS = math.clamp((Mouse.X - vsPos.X) / vsSize.X, 0, 1)
+					ColorV = 1 - math.clamp((Mouse.Y - vsPos.Y) / vsSize.Y, 0, 1)
+					UpdateColor()
+				elseif HueDragging then
+					local hPos = Hue_Picker_Color.AbsolutePosition
+					local hSize = Hue_Picker_Color.AbsoluteSize
+					ColorH = math.clamp((Mouse.Y - hPos.Y) / hSize.Y, 0, 1)
+					UpdateColor()
+				end
+			end
+		end)
+
+		local InputEnded = utility:CreateConnection(uis.InputEnded, function(Input)
+			if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+				ValSatDragging = false
+				HueDragging = false
+			end
+		end)
+
+		function Content.Content:Close()
+			Content.Content.Open = false
+			for _, Value in ipairs(Connections) do
+				utility:DisconnectConnection(Value)
+			end
+			utility:DisconnectConnection(InputBegan)
+			utility:DisconnectConnection(InputChanged)
+			utility:DisconnectConnection(InputEnded)
+			utility:DestroyObject(ValSat_Picker_Cursor)
+			utility:DestroyObject(ValSat_Picker_Image)
+			utility:DestroyObject(ValSat_Picker_Color)
+			utility:DestroyObject(Hue_Picker_Cursor)
+			utility:DestroyObject(Hue_Picker_Gradient)
+			utility:DestroyObject(Hue_Picker_Color)
+			utility:DestroyObject(Hue_Picker_Outline)
+			utility:DestroyObject(ValSat_Picker_Outline)
+			utility:DestroyObject(Open_Outline_Frame)
+			utility:DestroyObject(Open_Holder_Outline)
+			utility:DestroyObject(Open_Holder_Button)
+			utility:DestroyObject(Content_Open_Holder)
+			function Content.Content:Refresh() end
+			Connections = nil
+		end
+
+		function Content.Content:Refresh()
+			ColorH, ColorS, ColorV = Content.State:ToHSV()
+			ValSat_Picker_Color.BackgroundColor3 = Color3.fromHSV(ColorH, 1, 1)
+			ValSat_Picker_Cursor.Position = UDim2.new(ColorS, -2, 1 - ColorV, -2)
+			Hue_Picker_Cursor.Position = UDim2.new(0, 0, ColorH, -2)
+		end
+		
+		Content.Content.Open = true
+		Content.Section.Content = Content.Content
+		UpdateColor()
 	end
 
 	utility:CreateConnection(Content_Holder_Button.MouseButton1Click, function()
