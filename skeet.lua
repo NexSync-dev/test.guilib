@@ -59,7 +59,8 @@ function utility:DisconnectConnection(Connection)
 end
 
 function utility:MouseLocation()
-	return uis:GetMouseLocation()
+	local mouse = uis:GetMouseLocation()
+	return Vector2.new(mouse.X, mouse.Y)
 end
 
 function utility:Serialise(Table)
@@ -98,8 +99,14 @@ function library:CreateWindow(Properties)
 		Key = Enum.KeyCode.Z,
 		Elements = {},
 		AccentElements = {},
-		OpenContent = nil
+		OpenContent = nil,
+		Blur = false,
+		FirstPageSet = false
 	}
+	
+	local blurEffect = Instance.new("BlurEffect")
+	blurEffect.Size = 0
+	blurEffect.Parent = game:GetService("Lighting")
 	local ScreenGui = utility:RenderObject("ScreenGui", {
 		DisplayOrder = 9999,
 		Enabled = true,
@@ -233,6 +240,11 @@ function library:CreateWindow(Properties)
 	end
 
 	function Window:Fade(state)
+		if Window.Blur then
+			tws:Create(blurEffect, TweenInfo.new(0.25, Enum.EasingStyle.Linear), {Size = state and 24 or 0}):Play()
+		else
+			tws:Create(blurEffect, TweenInfo.new(0.25, Enum.EasingStyle.Linear), {Size = 0}):Play()
+		end
 		local snapshot = {}
 		for i, render in ipairs(library.Renders) do
 			snapshot[i] = render
@@ -270,6 +282,7 @@ function library:CreateWindow(Properties)
 	end
 
 	function Window:Unload()
+		if blurEffect then blurEffect:Destroy() end
 		for _, connection in ipairs(library.Connections) do
 			if connection and connection.Disconnect then
 				connection:Disconnect()
@@ -290,6 +303,18 @@ function library:CreateWindow(Properties)
 			if item.Type == "Toggle" then
 				item.Object.BackgroundColor3 = item.Element.State and newColor or Color3.fromRGB(77, 77, 77)
 			elseif item.Type == "Slider" then
+				item.Object.BackgroundColor3 = newColor
+			elseif item.Type == "Page" then
+				item.Object.BackgroundColor3 = newColor
+				-- also tint the active tab icon
+				if item.Element.Open and item.IconObject then
+					item.IconObject.ImageColor3 = newColor
+				end
+			elseif item.Type == "Section" then
+				item.Object.BackgroundColor3 = newColor
+			elseif item.Type == "Label" then
+				item.Object.TextColor3 = newColor
+			elseif item.Type == "Border" then
 				item.Object.BackgroundColor3 = newColor
 			end
 		end
@@ -340,12 +365,12 @@ function library:CreateWindow(Properties)
 	local WindowObj = setmetatable(Window, library)
 	WindowObj.CreateTab = WindowObj.CreatePage
 
-	local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999})
-	local configSection = settings_page:CreateSection({Name = "Configuration", Size = 150, Side = "Left"})
+	local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999, IsSettings = true})
+	local configSection = settings_page:CreateSection({Name = "Configuration", Size = 280, Side = "Left"})
 	
 	configSection:CreateKeybind({
 		Name = "Toggle Keybind",
-		State = {"KeyCode", WindowObj.Key.Name},
+		State = {"KeyCode", "Z"},
 		Callback = function(val)
 			if val and val[1] == "KeyCode" then
 				WindowObj.Key = Enum.KeyCode[val[2]]
@@ -353,36 +378,97 @@ function library:CreateWindow(Properties)
 		end
 	})
 
+	configSection:CreateToggle({
+		Name = "UI Blur",
+		State = false,
+		Callback = function(state)
+			WindowObj.Blur = state
+			if WindowObj.Enabled then
+				blurEffect.Size = state and 24 or 0
+			else
+				blurEffect.Size = 0
+			end
+		end
+	})
+
+	local ConfigFolderName = library.Folder .. "/" .. library.Configs .. "/" .. tostring(game.GameId)
+	pcall(function()
+		if makefolder then
+			makefolder(library.Folder)
+			makefolder(library.Folder .. "/" .. library.Configs)
+			makefolder(ConfigFolderName)
+		end
+	end)
+	
+	local function GetConfigs()
+		local configs = {}
+		if listfiles then
+			pcall(function()
+				for _, file in ipairs(listfiles(ConfigFolderName)) do
+					if file:match("%.json$") then
+						table.insert(configs, file:match("([^/\\]+)%.json$"))
+					end
+				end
+			end)
+		end
+		if #configs == 0 then table.insert(configs, "default") end
+		return configs
+	end
+
+	local configDropdown = configSection:CreateDropdown({
+		Name = "Selected Config",
+		Options = GetConfigs(),
+		State = 1
+	})
+
+	local configNameBox = configSection:CreateTextBox({
+		Name = "Config Name",
+		State = "default"
+	})
+
+	configSection:CreateButton({
+		Name = "Refresh Configs",
+		Callback = function()
+			configDropdown:RefreshOptions(GetConfigs())
+		end
+	})
+
 	configSection:CreateButton({
 		Name = "Save Configuration",
 		Callback = function()
+			local configName = configNameBox:Get()
+			if configName == "" then configName = "default" end
+			
 			local data = {}
 			for key, info in pairs(WindowObj.Elements) do
 				local val = info.Element:Get()
 				if info.Type == "Colorpicker" then
 					data[key] = {val.R, val.G, val.B}
+				elseif info.Type == "Keybind" then
+					data[key] = {val[1], val[2]}
 				else
 					data[key] = val
 				end
 			end
 			pcall(function()
-				if makefolder then
-					makefolder(library.Folder)
-					makefolder(library.Folder .. "/" .. library.Configs)
-				end
 				if writefile then
-					writefile(library.Folder .. "/" .. library.Configs .. "/config.json", game:GetService("HttpService"):JSONEncode(data))
+					writefile(ConfigFolderName .. "/" .. configName .. ".json", game:GetService("HttpService"):JSONEncode(data))
 				end
 			end)
+			configDropdown:RefreshOptions(GetConfigs())
 		end
 	})
 
 	configSection:CreateButton({
 		Name = "Load Configuration",
 		Callback = function()
+			local selectedIndex = configDropdown:Get()
+			local configName = configDropdown.Options[selectedIndex]
+			if not configName then return end
+			
 			local success, content = pcall(function()
 				if readfile then
-					return readfile(library.Folder .. "/" .. library.Configs .. "/config.json")
+					return readfile(ConfigFolderName .. "/" .. configName .. ".json")
 				end
 			end)
 			if success and content then
@@ -516,7 +602,7 @@ function library:CreatePage(Properties)
 		Size = UDim2.new(1, 0, 0, 72)
 	})
 	local Page_Tab_Border = utility:RenderObject("Frame", {
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundColor3 = Page.Window.Accent,
 		BackgroundTransparency = 0,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
@@ -654,7 +740,19 @@ function library:CreatePage(Properties)
 		Page_Tab_Image.ImageColor3 = Page.Open and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(90, 90, 90)
 	end)
 
-	if #Page.Window.Pages == 0 then Page:Set(true) end
+	if not Properties.IsSettings then
+		if not Page.Window.FirstPageSet then
+			Page.Window.FirstPageSet = true
+			for _, p in ipairs(Page.Window.Pages) do p:Set(false) end
+			Page:Set(true)
+		end
+	end
+	table.insert(Page.Window.AccentElements, {
+		Type = "Page",
+		Element = Page,
+		Object = Page_Tab_Border,
+		IconObject = Page_Tab_Image
+	})
 	Page.Window.Pages[#Page.Window.Pages + 1] = Page
 	return setmetatable(Page, pages)
 end
@@ -702,7 +800,7 @@ function pages:CreateSection(Properties)
 		ZIndex = 2
 	})
 	local Section_Holder_TitleInline = utility:RenderObject("Frame", {
-		BackgroundColor3 = Color3.fromRGB(23, 23, 23),
+		BackgroundColor3 = Section.Window.Accent,
 		BackgroundTransparency = 0,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
@@ -861,6 +959,16 @@ function pages:CreateSection(Properties)
 		PaddingBottom = UDim.new(0, 15)
 	})
 	Section_Holder_TitleInline.Size = UDim2.new(0, Section_Holder_Title.TextBounds.X + 6, 0, 2)
+	table.insert(Section.Window.AccentElements, {
+		Type = "Section",
+		Element = Section,
+		Object = Section_Holder_TitleInline
+	})
+	table.insert(Section.Window.AccentElements, {
+		Type = "Label",
+		Element = Section,
+		Object = Section_Holder_Title
+	})
 	Section["Holder"] = Holder_Frame_ContentHolder
 	Section["Extra"] = Section_Holder_Extra
 
@@ -1589,6 +1697,15 @@ function sections:CreateDropdown(Properties)
 	utility:CreateConnection(Content_Holder_Button.MouseLeave, function()
 		Holder_Outline_Frame.BackgroundColor3 = Content.Content.Open and Color3.fromRGB(46, 46, 46) or Color3.fromRGB(36, 36, 36)
 	end)
+
+	function Content:RefreshOptions(newOptions)
+		Content.Options = newOptions
+		local currentSelected = Content.Options[Content.State] and Content.State or 1
+		Content:Set(currentSelected)
+		if Content.Content.Open then
+			Content.Section:CloseContent()
+		end
+	end
 
 	Content:Set(Content.State)
 	if Content.Name then
