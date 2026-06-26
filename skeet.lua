@@ -358,6 +358,12 @@ function library:CreateWindow(Properties)
 	utility:CreateConnection(uis.InputBegan, function(Input)
 		if Input.KeyCode and Input.KeyCode == Window.Key then
 			Window.Enabled = not Window.Enabled
+			ScreenGui_MainFrame.Visible = Window.Enabled
+			if not Window.Enabled then
+				-- release focus from any active textbox so text clears visually
+				game:GetService("GuiService").SelectedObject = nil
+				pcall(function() uis:GetFocusedTextBox():ReleaseFocus() end)
+			end
 			Window:Fade(Window.Enabled)
 		end
 	end)
@@ -718,9 +724,20 @@ function library:CreatePage(Properties)
 
 	function Page:Set(state)
 		Page.Open = state
-		Page_Page.Visible = Page.Open
 		Page_Tab_Border.Visible = Page.Open
-		Page_Tab_Image.ImageColor3 = Page.Open and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(90, 90, 90)
+		if state then
+			Page_Page.Visible = true
+			tws:Create(Page_Page, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
+		else
+			local t = tws:Create(Page_Page, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
+			t:Play()
+			t.Completed:Connect(function()
+				if not Page.Open then
+					Page_Page.Visible = false
+				end
+			end)
+		end
+		tws:Create(Page_Tab_Image, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {ImageColor3 = Page.Open and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(90, 90, 90)}):Play()
 		if Page.Open then
 			Page.Window:SetPage(Page)
 		end
@@ -810,14 +827,14 @@ function pages:CreateSection(Properties)
 		ZIndex = 5
 	})
 	local Section_Holder_Title = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0.5),
+		AnchorPoint = Vector2.new(0, 0),
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
 		Parent = Section_Holder,
-		Position = UDim2.new(0, 12, 0, 0),
-		Size = UDim2.new(1, -26, 0, 15),
+		Position = UDim2.new(0, 12, 0, 4),
+		Size = UDim2.new(1, -26, 0, 13),
 		ZIndex = 5,
 		Font = "Code",
 		RichText = true,
@@ -2529,16 +2546,17 @@ function sections:CreateColorpicker(Properties)
 		local InputChanged = utility:CreateConnection(uis.InputChanged, function(Input)
 			if Content.Content.Open and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
 				local Mouse = utility:MouseLocation()
+				local inset = game:GetService("GuiService"):GetGuiInset()
 				if ValSatDragging then
 					local vsPos = ValSat_Picker_Color.AbsolutePosition
 					local vsSize = ValSat_Picker_Color.AbsoluteSize
 					ColorS = math.clamp((Mouse.X - vsPos.X) / vsSize.X, 0, 1)
-					ColorV = 1 - math.clamp((Mouse.Y - vsPos.Y) / vsSize.Y, 0, 1)
+					ColorV = 1 - math.clamp((Mouse.Y - (vsPos.Y - inset.Y)) / vsSize.Y, 0, 1)
 					UpdateColor()
 				elseif HueDragging then
 					local hPos = Hue_Picker_Color.AbsolutePosition
 					local hSize = Hue_Picker_Color.AbsoluteSize
-					ColorH = math.clamp((Mouse.Y - hPos.Y) / hSize.Y, 0, 1)
+					ColorH = math.clamp((Mouse.Y - (hPos.Y - inset.Y)) / hSize.Y, 0, 1)
 					UpdateColor()
 				end
 			end
