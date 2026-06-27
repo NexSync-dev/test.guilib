@@ -513,12 +513,9 @@ function library:CreateWindow(Properties)
 		State = 100,
 		Callback = function(value)
 			local transparency = 1 - (value / 100)
-			for _, render in ipairs(library.Renders) do
-				if render:IsA("Frame") and render.BackgroundColor3 ~= Color3.fromRGB(0, 0, 0) then
-					pcall(function() render.BackgroundTransparency = transparency end)
-				end
-			end
-			ScreenGui_MainFrame.BackgroundTransparency = transparency
+			pcall(function()
+				ScreenGui_MainFrame.BackgroundTransparency = transparency
+			end)
 		end
 	})
 	themeSection:CreateToggle({
