@@ -60,7 +60,8 @@ end
 
 function utility:MouseLocation()
 	local mouse = uis:GetMouseLocation()
-	return Vector2.new(mouse.X, mouse.Y)
+	local inset = game:GetService("GuiService"):GetGuiInset()
+	return Vector2.new(mouse.X, mouse.Y - inset.Y)
 end
 
 function utility:Serialise(Table)
@@ -357,10 +358,10 @@ function library:CreateWindow(Properties)
 
 	utility:CreateConnection(uis.InputBegan, function(Input)
 		if Input.KeyCode and Input.KeyCode == Window.Key then
+			if uis:GetFocusedTextBox() then return end
 			Window.Enabled = not Window.Enabled
 			ScreenGui_MainFrame.Visible = Window.Enabled
 			if not Window.Enabled then
-				-- release focus from any active textbox so text clears visually
 				game:GetService("GuiService").SelectedObject = nil
 				pcall(function() uis:GetFocusedTextBox():ReleaseFocus() end)
 			end
@@ -725,18 +726,7 @@ function library:CreatePage(Properties)
 	function Page:Set(state)
 		Page.Open = state
 		Page_Tab_Border.Visible = Page.Open
-		if state then
-			Page_Page.Visible = true
-			tws:Create(Page_Page, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
-		else
-			local t = tws:Create(Page_Page, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
-			t:Play()
-			t.Completed:Connect(function()
-				if not Page.Open then
-					Page_Page.Visible = false
-				end
-			end)
-		end
+		Page_Page.Visible = Page.Open
 		tws:Create(Page_Tab_Image, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {ImageColor3 = Page.Open and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(90, 90, 90)}):Play()
 		if Page.Open then
 			Page.Window:SetPage(Page)
@@ -1687,7 +1677,7 @@ function sections:CreateDropdown(Properties)
 		Holder_Outline_Frame.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 		task.wait()
 
-		InputCheck = utility:CreateConnection(uis.InputBegan, function(Input)
+		InputCheck = utility:CreateConnection(uis.InputEnded, function(Input)
 			if Content.Content.Open and Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				local Mouse = utility:MouseLocation()
 				local pos = Content_Open_Holder.AbsolutePosition
@@ -2056,7 +2046,7 @@ function sections:CreateMultibox(Properties)
 		Holder_Outline_Frame.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 		task.wait()
 
-		InputCheck = utility:CreateConnection(uis.InputBegan, function(Input)
+		InputCheck = utility:CreateConnection(uis.InputEnded, function(Input)
 			if Content.Content.Open and Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				local Mouse = utility:MouseLocation()
 				local pos = Content_Open_Holder.AbsolutePosition
@@ -2546,17 +2536,16 @@ function sections:CreateColorpicker(Properties)
 		local InputChanged = utility:CreateConnection(uis.InputChanged, function(Input)
 			if Content.Content.Open and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
 				local Mouse = utility:MouseLocation()
-				local inset = game:GetService("GuiService"):GetGuiInset()
 				if ValSatDragging then
 					local vsPos = ValSat_Picker_Color.AbsolutePosition
 					local vsSize = ValSat_Picker_Color.AbsoluteSize
 					ColorS = math.clamp((Mouse.X - vsPos.X) / vsSize.X, 0, 1)
-					ColorV = 1 - math.clamp((Mouse.Y - (vsPos.Y - inset.Y)) / vsSize.Y, 0, 1)
+					ColorV = 1 - math.clamp((Mouse.Y - vsPos.Y) / vsSize.Y, 0, 1)
 					UpdateColor()
 				elseif HueDragging then
 					local hPos = Hue_Picker_Color.AbsolutePosition
 					local hSize = Hue_Picker_Color.AbsoluteSize
-					ColorH = math.clamp((Mouse.Y - (hPos.Y - inset.Y)) / hSize.Y, 0, 1)
+					ColorH = math.clamp((Mouse.Y - hPos.Y) / hSize.Y, 0, 1)
 					UpdateColor()
 				end
 			end
