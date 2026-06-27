@@ -507,7 +507,7 @@ function library:CreateWindow(Properties)
 		end
 	})
 	themeSection:CreateSlider({
-		Name = "GUI Opacity",
+		Name = "GUI Outline",
 		Min = 0,
 		Max = 100,
 		State = 100,
@@ -518,8 +518,8 @@ function library:CreateWindow(Properties)
 			end)
 		end
 	})
-	themeSection:CreateToggle({
-		Name = "Compact Mode",
+	themeSection:CreateButton({
+		Name = "Compact Tabs",
 		State = false,
 		Callback = function(state)
 			WindowObj.CompactMode = state
