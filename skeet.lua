@@ -97,7 +97,7 @@ function library:CreateWindow(Properties)
 		Pages = {},
 		Accent = Color3.fromRGB(255, 120, 30),
 		Enabled = true,
-		Key = Enum.KeyCode.Z,
+		Key = Enum.KeyCode.Insert,
 		Elements = {},
 		AccentElements = {},
 		OpenContent = nil,
@@ -377,7 +377,7 @@ function library:CreateWindow(Properties)
 	
 	configSection:CreateKeybind({
 		Name = "Toggle Keybind",
-		State = {"KeyCode", "Z"},
+		State = {"KeyCode", "Insert"},
 		Callback = function(val)
 			if val and val[1] == "KeyCode" then
 				WindowObj.Key = Enum.KeyCode[val[2]]
@@ -519,10 +519,10 @@ function library:CreateWindow(Properties)
 		end
 	})
 	themeSection:CreateButton({
-		Name = "Compact Tabs",
-		State = false,
-		Callback = function(state)
-			WindowObj.CompactMode = state
+		Name = "Toggle Compact Mode",
+		Callback = function()
+			WindowObj.CompactMode = not WindowObj.CompactMode
+			local state = WindowObj.CompactMode
 			for _, item in ipairs(WindowObj.AccentElements) do
 				if item.Type == "Section" and item.Object then
 					pcall(function()
@@ -2292,8 +2292,10 @@ function sections:CreateKeybind(Properties)
 			if Input.KeyCode == Enum[Content:Get()[1]][Content:Get()[2]] or Input.UserInputType == Enum[Content:Get()[1]][Content:Get()[2]] then
 				if Content.Mode == "Hold" then
 					Content.Active = true
+					Content.Callback(true)
 				elseif Content.Mode == "Toggle" then
 					Content.Active = not Content.Active
+					Content.Callback(Content.Active)
 				end
 			end
 		end
@@ -2304,6 +2306,7 @@ function sections:CreateKeybind(Properties)
 			if Input.KeyCode == Enum[Content:Get()[1]][Content:Get()[2]] or Input.UserInputType == Enum[Content:Get()[1]][Content:Get()[2]] then
 				if Content.Mode == "Hold" then
 					Content.Active = false
+					Content.Callback(false)
 				end
 			end
 		end
