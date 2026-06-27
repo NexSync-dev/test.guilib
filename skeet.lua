@@ -498,12 +498,63 @@ function library:CreateWindow(Properties)
 		end
 	})
 
-	local themeSection = settings_page:CreateSection({Name = "Theme", Size = 90, Side = "Left"})
+	local themeSection = settings_page:CreateSection({Name = "Theme", Size = 230, Side = "Left"})
 	themeSection:CreateColorpicker({
 		Name = "Accent Color",
 		State = WindowObj.Accent,
 		Callback = function(color)
 			WindowObj:SetAccent(color)
+		end
+	})
+	themeSection:CreateSlider({
+		Name = "GUI Opacity",
+		Min = 0,
+		Max = 100,
+		State = 100,
+		Callback = function(value)
+			local transparency = 1 - (value / 100)
+			for _, render in ipairs(library.Renders) do
+				if render:IsA("Frame") and render.BackgroundColor3 ~= Color3.fromRGB(0, 0, 0) then
+					pcall(function() render.BackgroundTransparency = transparency end)
+				end
+			end
+			ScreenGui_MainFrame.BackgroundTransparency = transparency
+		end
+	})
+	themeSection:CreateToggle({
+		Name = "Compact Mode",
+		State = false,
+		Callback = function(state)
+			WindowObj.CompactMode = state
+			for _, item in ipairs(WindowObj.AccentElements) do
+				if item.Type == "Section" and item.Object then
+					pcall(function()
+						item.Object.Parent.Size = UDim2.new(
+							item.Object.Parent.Size.X.Scale,
+							item.Object.Parent.Size.X.Offset,
+							0,
+							state and math.max(item.Object.Parent.Size.Y.Offset - 20, 30) or item.Object.Parent.Size.Y.Offset
+						)
+					end)
+				end
+			end
+		end
+	})
+	themeSection:CreateToggle({
+		Name = "Rainbow Accent",
+		State = false,
+		Callback = function(state)
+			WindowObj.RainbowAccent = state
+			if state then
+				task.spawn(function()
+					local hue = 0
+					while WindowObj.RainbowAccent do
+						hue = (hue + 1) % 360
+						WindowObj:SetAccent(Color3.fromHSV(hue / 360, 1, 1))
+						task.wait(0.05)
+					end
+				end)
+			end
 		end
 	})
 
@@ -1677,12 +1728,16 @@ function sections:CreateDropdown(Properties)
 		Holder_Outline_Frame.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 		task.wait()
 
-		InputCheck = utility:CreateConnection(uis.InputEnded, function(Input)
+		InputCheck = utility:CreateConnection(uis.InputBegan, function(Input)
 			if Content.Content.Open and Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				local Mouse = utility:MouseLocation()
 				local pos = Content_Open_Holder.AbsolutePosition
 				local size = Content_Open_Holder.AbsoluteSize
-				if not (Mouse.X > pos.X and Mouse.Y > pos.Y and Mouse.X < pos.X + size.X and Mouse.Y < pos.Y + size.Y) then
+				local btnPos = Content_Holder_Button.AbsolutePosition
+				local btnSize = Content_Holder_Button.AbsoluteSize
+				local overButton = Mouse.X > btnPos.X and Mouse.Y > btnPos.Y and Mouse.X < btnPos.X + btnSize.X and Mouse.Y < btnPos.Y + btnSize.Y
+				local overList = Mouse.X > pos.X and Mouse.Y > pos.Y and Mouse.X < pos.X + size.X and Mouse.Y < pos.Y + size.Y
+				if not overButton and not overList then
 					Content.Section:CloseContent()
 				end
 			end
@@ -2046,12 +2101,16 @@ function sections:CreateMultibox(Properties)
 		Holder_Outline_Frame.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 		task.wait()
 
-		InputCheck = utility:CreateConnection(uis.InputEnded, function(Input)
+		InputCheck = utility:CreateConnection(uis.InputBegan, function(Input)
 			if Content.Content.Open and Input.UserInputType == Enum.UserInputType.MouseButton1 then
 				local Mouse = utility:MouseLocation()
 				local pos = Content_Open_Holder.AbsolutePosition
 				local size = Content_Open_Holder.AbsoluteSize
-				if not (Mouse.X > pos.X and Mouse.Y > pos.Y and Mouse.X < pos.X + size.X and Mouse.Y < pos.Y + size.Y) then
+				local btnPos = Content_Holder_Button.AbsolutePosition
+				local btnSize = Content_Holder_Button.AbsoluteSize
+				local overButton = Mouse.X > btnPos.X and Mouse.Y > btnPos.Y and Mouse.X < btnPos.X + btnSize.X and Mouse.Y < btnPos.Y + btnSize.Y
+				local overList = Mouse.X > pos.X and Mouse.Y > pos.Y and Mouse.X < pos.X + size.X and Mouse.Y < pos.Y + size.Y
+				if not overButton and not overList then
 					Content.Section:CloseContent()
 				end
 			end
