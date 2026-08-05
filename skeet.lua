@@ -62,6 +62,17 @@ function utility:MouseLocation()
 	return uis:GetMouseLocation()
 end
 
+function utility:ReparentPopup(Popup, Parent)
+	if typeof(Popup) ~= "Instance" or typeof(Parent) ~= "Instance" then return Popup end
+	local absPos = Popup.AbsolutePosition
+	Popup.Parent = Parent
+	if Parent.AbsoluteSize.X > 0 then
+		local parentPos = Parent.AbsolutePosition
+		Popup.Position = UDim2.fromOffset(absPos.X - parentPos.X, absPos.Y - parentPos.Y)
+	end
+	return Popup
+end
+
 function utility:Resolve(Table, Aliases, Default)
 	if not Table or typeof(Table) ~= "table" then return Default end
 	for _, Key in ipairs(Aliases) do
@@ -161,6 +172,7 @@ function library:CreateWindow(Properties)
 		ThemeElements = {},
 		OpenContent = nil,
 		Blur = false,
+		AutoSave = true,
 		FirstPageSet = false,
 		SettingsData = {}
 	}
@@ -321,8 +333,10 @@ function library:CreateWindow(Properties)
 		for _, render in ipairs(snapshot) do
 			if not render[3] and render[1] and typeof(render[1]) == "Instance" and render[1].Parent then
 				pcall(function()
-					if render[1].ClassName == "Frame" and (render[2]["BackgroundTransparency"] or 0) ~= 1 then
-						tws:Create(render[1], TweenInfo.new(render[4] or 0.25, Enum.EasingStyle["Linear"], state and Enum.EasingDirection["Out"] or Enum.EasingDirection["In"]), {BackgroundTransparency = state and (render[2]["BackgroundTransparency"] or 0) or 1}):Play()
+					if render[1].ClassName == "Frame" or render[1].ClassName == "ViewportFrame" then
+						if (render[2]["BackgroundTransparency"] or 0) ~= 1 then
+							tws:Create(render[1], TweenInfo.new(render[4] or 0.25, Enum.EasingStyle["Linear"], state and Enum.EasingDirection["Out"] or Enum.EasingDirection["In"]), {BackgroundTransparency = state and (render[2]["BackgroundTransparency"] or 0) or 1}):Play()
+						end
 					elseif render[1].ClassName == "ImageLabel" then
 						if (render[2]["BackgroundTransparency"] or 0) ~= 1 then
 							tws:Create(render[1], TweenInfo.new(render[4] or 0.25, Enum.EasingStyle["Linear"], state and Enum.EasingDirection["Out"] or Enum.EasingDirection["In"]), {BackgroundTransparency = state and (render[2]["BackgroundTransparency"] or 0) or 1}):Play()
@@ -507,6 +521,7 @@ function library:CreateWindow(Properties)
 	utility:CreateConnection(uis.InputEnded, function(Input)
 		if Dragging and (Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch) then
 			Dragging = false
+			if not Window.AutoSave then return end
 			Window.SettingsData.position = {
 				XScale = ScreenGui_MainFrame.Position.X.Scale,
 				XOffset = ScreenGui_MainFrame.Position.X.Offset,
@@ -542,7 +557,10 @@ function library:CreateWindow(Properties)
 	table.insert(Window.ThemeElements, {Type = "Background", Object = Pages_InnerBorder_InnerFrame, Shade = "Base"})
 
 	Window.SettingsData = utility:GetSettings(library.Folder, "isettings.json")
-	local savedPos = Window.SettingsData.position
+	if Window.SettingsData.saveUIState == false then
+		Window.AutoSave = false
+	end
+	local savedPos = Window.AutoSave and Window.SettingsData.position
 	if savedPos then
 		pcall(function()
 			ScreenGui_MainFrame.Position = UDim2.new(savedPos.XScale or 0.5, savedPos.XOffset or 0, savedPos.YScale or 0.5, savedPos.YOffset or 0)
@@ -572,6 +590,16 @@ function library:CreateWindow(Properties)
 			else
 				blurEffect.Size = 0
 			end
+		end
+	})
+
+	configSection:CreateToggle({
+		Name = "Save UI State",
+		State = Window.AutoSave,
+		Callback = function(state)
+			Window.AutoSave = state
+			Window.SettingsData.saveUIState = state
+			utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
 		end
 	})
 
@@ -1007,7 +1035,7 @@ function library:CreatePage(Properties)
 			end
 		end
 		if Page.Open then
-			if Page.UserIndex and Page.Window.SettingsData then
+			if Page.UserIndex and Page.Window.SettingsData and Page.Window.AutoSave then
 				Page.Window.SettingsData.lastTab = Page.UserIndex
 				utility:SaveSettings(library.Folder, "isettings.json", Page.Window.SettingsData)
 			end
@@ -1035,7 +1063,7 @@ function library:CreatePage(Properties)
 		if not Page.Window.FirstPageSet then
 			Page.Window.FirstPageSet = true
 			task.defer(function()
-				local target = Page.Window.SettingsData and Page.Window.SettingsData.lastTab
+				local target = Page.Window.AutoSave and Page.Window.SettingsData and Page.Window.SettingsData.lastTab
 				local targetPage = nil
 				for _, p in ipairs(Page.Window.Pages) do
 					if not p.IsSettings and p.UserIndex == target then
@@ -1263,7 +1291,7 @@ function pages:CreateSection(Properties)
 		Section_Holder.ClipsDescendants = state
 	end
 
-	local savedCollapsed = Section.Window.SettingsData and Section.Window.SettingsData.sections and Section.Window.SettingsData.sections[Section.Name]
+	local savedCollapsed = Section.Window.AutoSave and Section.Window.SettingsData and Section.Window.SettingsData.sections and Section.Window.SettingsData.sections[Section.Name]
 	if savedCollapsed then
 		ApplyCollapsed(true)
 	end
@@ -1273,7 +1301,7 @@ function pages:CreateSection(Properties)
 			Section:CloseContent()
 		end
 		ApplyCollapsed(not Section.Collapsed)
-		if Section.Window.SettingsData then
+		if Section.Window.SettingsData and Section.Window.AutoSave then
 			Section.Window.SettingsData.sections = Section.Window.SettingsData.sections or {}
 			Section.Window.SettingsData.sections[Section.Name] = Section.Collapsed
 			utility:SaveSettings(library.Folder, "isettings.json", Section.Window.SettingsData)
@@ -1745,6 +1773,8 @@ function sections:CreateDropdown(Properties)
 			Size = UDim2.new(0, outlineSize.X, 0, (18 * #Content.Options) + 2),
 			ZIndex = 6
 		})
+		utility:ReparentPopup(Content_Open_Holder, Content.Page["Page"])
+
 		local Open_Holder_Outline = utility:RenderObject("Frame", {
 			BackgroundColor3 = Color3.fromRGB(12, 12, 12),
 			BackgroundTransparency = 0,
@@ -2074,6 +2104,7 @@ function sections:CreateMultibox(Properties)
 			Size = UDim2.new(0, outlineSize.X, 0, (18 * #Content.Options) + 2),
 			ZIndex = 6
 		})
+		utility:ReparentPopup(Content_Open_Holder, Content.Page["Page"])
 		local Open_Holder_Outline = utility:RenderObject("Frame", {
 			BackgroundColor3 = Color3.fromRGB(12, 12, 12),
 			BackgroundTransparency = 0,
@@ -2496,6 +2527,7 @@ function sections:CreateColorpicker(Properties)
 			Size = UDim2.new(0, 180, 0, 175),
 			ZIndex = 6
 		})
+		utility:ReparentPopup(Content_Open_Holder, Content.Page["Page"])
 		local Open_Holder_Button = utility:RenderObject("TextButton", {
 			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 			BackgroundTransparency = 1,
