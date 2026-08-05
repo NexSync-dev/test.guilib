@@ -2,8 +2,8 @@ local library = {
 	Renders = {},
 	Connections = {},
 	Folder = "Skeet",
-	Assets = "Assets",
-	Configs = "Configs"
+	Configs = "Configs",
+	CurrentWindow = nil
 }
 local utility = {}
 local pages = {}
@@ -24,7 +24,7 @@ function utility:RenderObject(RenderType, RenderProperties, RenderHidden)
 			end
 		end
 	end
-	library.Renders[#library.Renders + 1] = {Render, RenderProperties, RenderHidden, RenderProperties["RenderTime"] or nil}
+	library.Renders[#library.Renders + 1] = {Render, RenderProperties, RenderHidden, RenderProperties["RenderTime"] or nil, library.CurrentWindow}
 	return Render
 end
 
@@ -42,13 +42,13 @@ end
 
 function utility:CreateConnection(ConnectionType, ConnectionCallback)
 	local Connection = ConnectionType:Connect(ConnectionCallback)
-	library.Connections[#library.Connections + 1] = Connection
+	library.Connections[#library.Connections + 1] = {Connection, library.CurrentWindow}
 	return Connection
 end
 
 function utility:DisconnectConnection(Connection)
 	for Index, Item in ipairs(library.Connections) do
-		if Item == Connection then
+		if Item[1] == Connection then
 			table.remove(library.Connections, Index)
 			break
 		end
@@ -59,9 +59,45 @@ function utility:DisconnectConnection(Connection)
 end
 
 function utility:MouseLocation()
-	local mouse = uis:GetMouseLocation()
-	local inset = game:GetService("GuiService"):GetGuiInset()
-	return Vector2.new(mouse.X, mouse.Y - inset.Y)
+	return uis:GetMouseLocation()
+end
+
+function utility:Resolve(Table, Aliases, Default)
+	if not Table or typeof(Table) ~= "table" then return Default end
+	for _, Key in ipairs(Aliases) do
+		local Value = Table[Key]
+		if Value ~= nil then return Value end
+	end
+	return Default
+end
+
+function utility:AddLabel(Parent, Position, Size, Text, TextColor, Transparency, ZIndex)
+	local Label = utility:RenderObject("TextLabel", {
+		AnchorPoint = Vector2.new(0, 0),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		BorderSizePixel = 0,
+		Parent = Parent,
+		Position = Position,
+		Size = Size,
+		ZIndex = ZIndex or 3,
+		Font = "Code",
+		RichText = true,
+		Text = Text,
+		TextColor3 = TextColor,
+		TextSize = 9,
+		TextStrokeTransparency = 1,
+		TextTransparency = Transparency or 0,
+		TextXAlignment = "Left"
+	})
+	return Label
+end
+
+function utility:AddTitle(Parent, Position, Size, Text, TextColor, ZIndex)
+	local based = utility:AddLabel(Parent, Position, Size, Text, TextColor, 0, ZIndex)
+	local ghost = utility:AddLabel(Parent, Position, Size, Text, TextColor, 0.5, ZIndex)
+	return based, ghost
 end
 
 function utility:Serialise(Table)
@@ -91,19 +127,44 @@ function utility:Sort(Table1, Table2)
 	return Table3
 end
 
+function utility:GetSettings(Folder, File)
+	local path = Folder .. "/" .. File
+	if not readfile then return {} end
+	local ok, data = pcall(function()
+		return game:GetService("HttpService"):JSONDecode(readfile(path))
+	end)
+	if ok and typeof(data) == "table" then return data end
+	return {}
+end
+
+function utility:SaveSettings(Folder, File, data)
+	if not writefile then return end
+	pcall(function()
+		writefile(Folder .. "/" .. File, game:GetService("HttpService"):JSONEncode(data))
+	end)
+end
+
 function library:CreateWindow(Properties)
 	Properties = Properties or {}
 	local Window = {
 		Pages = {},
 		Accent = Color3.fromRGB(255, 120, 30),
+		Theme = {
+			Background = Color3.fromRGB(25, 25, 25),
+			Accent = Color3.fromRGB(255, 120, 30),
+			Text = Color3.fromRGB(205, 205, 205)
+		},
 		Enabled = true,
 		Key = Enum.KeyCode.Insert,
 		Elements = {},
 		AccentElements = {},
+		ThemeElements = {},
 		OpenContent = nil,
 		Blur = false,
-		FirstPageSet = false
+		FirstPageSet = false,
+		SettingsData = {}
 	}
+	library.CurrentWindow = Window
 	
 	local blurEffect = Instance.new("BlurEffect")
 	blurEffect.Size = 0
@@ -248,7 +309,14 @@ function library:CreateWindow(Properties)
 		end
 		local snapshot = {}
 		for i, render in ipairs(library.Renders) do
-			snapshot[i] = render
+			if render[5] == self then
+				snapshot[#snapshot + 1] = render
+			end
+		end
+		if Window.External then
+			for _, item in ipairs(Window.External) do
+				snapshot[#snapshot + 1] = {item.Instance, item.Properties}
+			end
 		end
 		for _, render in ipairs(snapshot) do
 			if not render[3] and render[1] and typeof(render[1]) == "Instance" and render[1].Parent then
@@ -283,45 +351,131 @@ function library:CreateWindow(Properties)
 	end
 
 	function Window:Unload()
+		Window.RainbowAccent = false
+		if Window.External then
+			for _, item in ipairs(Window.External) do
+				if item.Instance and typeof(item.Instance) == "Instance" then
+					item.Instance:Destroy()
+				end
+			end
+			Window.External = nil
+		end
+		if Window.ExternalConnections then
+			for _, connection in ipairs(Window.ExternalConnections) do
+				if connection and connection.Disconnect then
+					connection:Disconnect()
+				end
+			end
+			Window.ExternalConnections = nil
+		end
 		if blurEffect then blurEffect:Destroy() end
-		for _, connection in ipairs(library.Connections) do
-			if connection and connection.Disconnect then
-				connection:Disconnect()
+		local index = #library.Connections
+		while index >= 1 do
+			local item = library.Connections[index]
+			if item[2] == self then
+				if item[1] and item[1].Disconnect then
+					item[1]:Disconnect()
+				end
+				table.remove(library.Connections, index)
+			end
+			index = index - 1
+		end
+		local index = #library.Renders
+		while index >= 1 do
+			local item = library.Renders[index]
+			if item[5] == self then
+				if item[1] and typeof(item[1]) == "Instance" then
+					item[1]:Destroy()
+				end
+				table.remove(library.Renders, index)
+			end
+			index = index - 1
+		end
+	end
+
+	function Window:AddInstance(instance)
+		if not instance or typeof(instance) ~= "Instance" then return nil end
+		Window.External = Window.External or {}
+		local properties = {}
+		for _, property in ipairs({"BackgroundTransparency", "ImageTransparency", "TextTransparency", "ScrollBarImageTransparency"}) do
+			local ok, value = pcall(function() return instance[property] end)
+			if ok and value ~= nil then
+				properties[property] = value
 			end
 		end
-		table.clear(library.Connections)
-		for _, render in ipairs(library.Renders) do
-			if render[1] and typeof(render[1]) == "Instance" then
-				render[1]:Destroy()
-			end
+		Window.External[#Window.External + 1] = {Instance = instance, Properties = properties}
+		return instance
+	end
+
+	function Window:RegisterConnection(connection)
+		if not connection or not connection.Disconnect then return nil end
+		Window.ExternalConnections = Window.ExternalConnections or {}
+		Window.ExternalConnections[#Window.ExternalConnections + 1] = connection
+		return connection
+	end
+
+	function Window:SetToggleKey(key)
+		if typeof(key) == "EnumItem" and key.EnumType == Enum.KeyCode then
+			Window.Key = key
 		end
-		table.clear(library.Renders)
 	end
 
 	function Window:SetAccent(newColor)
 		self.Accent = newColor
+		self.Theme.Accent = newColor
 		for _, item in ipairs(self.AccentElements) do
-			if item.Type == "Toggle" then
-				item.Object.BackgroundColor3 = item.Element.State and newColor or Color3.fromRGB(77, 77, 77)
-			elseif item.Type == "Slider" then
-				item.Object.BackgroundColor3 = newColor
-			elseif item.Type == "Page" then
-				item.Object.BackgroundColor3 = newColor
-				-- also tint the active tab icon
-				if item.Element.Open and item.IconObject then
-					item.IconObject.ImageColor3 = newColor
+			pcall(function()
+				if item.Type == "Toggle" then
+					item.Object.BackgroundColor3 = item.Element.State and newColor or Color3.fromRGB(77, 77, 77)
+				elseif item.Type == "Slider" then
+					item.Object.BackgroundColor3 = newColor
+				elseif item.Type == "Page" then
+					item.Object.BackgroundColor3 = newColor
+					if item.Element.Open and item.IconObject then
+						item.IconObject.ImageColor3 = newColor
+					end
+				elseif item.Type == "Section" then
+					item.Object.BackgroundColor3 = newColor
+				elseif item.Type == "Label" then
+					item.Object.TextColor3 = newColor
+				elseif item.Type == "Border" then
+					item.Object.BackgroundColor3 = newColor
 				end
-			elseif item.Type == "Section" then
-				item.Object.BackgroundColor3 = newColor
-			elseif item.Type == "Label" then
-				item.Object.TextColor3 = newColor
-			elseif item.Type == "Border" then
-				item.Object.BackgroundColor3 = newColor
-			end
+			end)
 		end
 		if self.OpenContent and self.OpenContent.Refresh then
-			self.OpenContent:Refresh()
+			pcall(function() self.OpenContent:Refresh() end)
 		end
+	end
+
+	local function DeriveShades(baseColor)
+		return {
+			Light = baseColor:Lerp(Color3.new(1, 1, 1), 0.09),
+			Base = baseColor,
+			Dark = baseColor:Lerp(Color3.new(0, 0, 0), 0.55)
+		}
+	end
+
+	function Window:SetTheme(Theme)
+		Theme = Theme or {}
+		self.Theme.Background = Theme.Background or self.Theme.Background
+		self.Theme.Accent = Theme.Accent or self.Theme.Accent
+		self.Theme.Text = Theme.Text or self.Theme.Text
+		local oldText = self.Theme.Text
+		local shades = DeriveShades(self.Theme.Background)
+		for _, item in ipairs(self.ThemeElements) do
+			if item.Type == "Background" then
+				local shade = item.Shade or "Base"
+				item.Object.BackgroundColor3 = shades[shade] or self.Theme.Background
+			end
+		end
+		for _, render in ipairs(library.Renders) do
+			local obj = render[1]
+			if obj and typeof(obj) == "Instance" and obj.ClassName == "TextLabel" and obj.TextColor3 == oldText then
+				obj.TextColor3 = self.Theme.Text
+			end
+		end
+		self:SetAccent(self.Theme.Accent)
 	end
 
 	Window["TabsHolder"] = InnerBorder_InnerFrame_Tabs
@@ -353,6 +507,13 @@ function library:CreateWindow(Properties)
 	utility:CreateConnection(uis.InputEnded, function(Input)
 		if Dragging and (Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch) then
 			Dragging = false
+			Window.SettingsData.position = {
+				XScale = ScreenGui_MainFrame.Position.X.Scale,
+				XOffset = ScreenGui_MainFrame.Position.X.Offset,
+				YScale = ScreenGui_MainFrame.Position.Y.Scale,
+				YOffset = ScreenGui_MainFrame.Position.Y.Offset
+			}
+			utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
 		end
 	end)
 
@@ -371,6 +532,22 @@ function library:CreateWindow(Properties)
 
 	local WindowObj = setmetatable(Window, library)
 	WindowObj.CreateTab = WindowObj.CreatePage
+
+	table.insert(Window.ThemeElements, {Type = "Background", Object = ScreenGui_MainFrame, Shade = "Base"})
+	table.insert(Window.ThemeElements, {Type = "Background", Object = ScreenGui_MainFrame_InnerBorder, Shade = "Light"})
+	table.insert(Window.ThemeElements, {Type = "Background", Object = MainFrame_InnerBorder_InnerFrame, Shade = "Dark"})
+	table.insert(Window.ThemeElements, {Type = "Background", Object = InnerBorder_InnerFrame_Tabs, Shade = "Dark"})
+	table.insert(Window.ThemeElements, {Type = "Background", Object = InnerBorder_InnerFrame_TopGradient, Shade = "Dark"})
+	table.insert(Window.ThemeElements, {Type = "Background", Object = InnerFrame_Pages_InnerBorder, Shade = "Light"})
+	table.insert(Window.ThemeElements, {Type = "Background", Object = Pages_InnerBorder_InnerFrame, Shade = "Base"})
+
+	Window.SettingsData = utility:GetSettings(library.Folder, "isettings.json")
+	local savedPos = Window.SettingsData.position
+	if savedPos then
+		pcall(function()
+			ScreenGui_MainFrame.Position = UDim2.new(savedPos.XScale or 0.5, savedPos.XOffset or 0, savedPos.YScale or 0.5, savedPos.YOffset or 0)
+		end)
+	end
 
 	local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999, IsSettings = true})
 	local configSection = settings_page:CreateSection({Name = "Configuration", Size = 280, Side = "Left"})
@@ -425,8 +602,23 @@ function library:CreateWindow(Properties)
 	local configDropdown = configSection:CreateDropdown({
 		Name = "Selected Config",
 		Options = GetConfigs(),
-		State = 1
+		State = 1,
+		Callback = function(index)
+			if configDropdown and Window.SettingsData then
+				Window.SettingsData.config = configDropdown.Options[index]
+				utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
+			end
+		end
 	})
+	local savedConfig = Window.SettingsData and Window.SettingsData.config
+	if savedConfig then
+		for i, opt in ipairs(GetConfigs()) do
+			if opt == savedConfig then
+				configDropdown:Set(i)
+				break
+			end
+		end
+	end
 
 	local configNameBox = configSection:CreateTextBox({
 		Name = "Config Name",
@@ -498,12 +690,26 @@ function library:CreateWindow(Properties)
 		end
 	})
 
-	local themeSection = settings_page:CreateSection({Name = "Theme", Size = 230, Side = "Left"})
+	local themeSection = settings_page:CreateSection({Name = "Theme", Size = 330, Side = "Left"})
 	themeSection:CreateColorpicker({
 		Name = "Accent Color",
 		State = WindowObj.Accent,
 		Callback = function(color)
 			WindowObj:SetAccent(color)
+		end
+	})
+	themeSection:CreateColorpicker({
+		Name = "Background Color",
+		State = WindowObj.Theme.Background,
+		Callback = function(color)
+			WindowObj:SetTheme({Background = color})
+		end
+	})
+	themeSection:CreateColorpicker({
+		Name = "Text Color",
+		State = WindowObj.Theme.Text,
+		Callback = function(color)
+			WindowObj:SetTheme({Text = color})
 		end
 	})
 	themeSection:CreateSlider({
@@ -516,25 +722,6 @@ function library:CreateWindow(Properties)
 			pcall(function()
 				ScreenGui_MainFrame.BackgroundTransparency = transparency
 			end)
-		end
-	})
-	themeSection:CreateButton({
-		Name = "Toggle Compact Mode",
-		Callback = function()
-			WindowObj.CompactMode = not WindowObj.CompactMode
-			local state = WindowObj.CompactMode
-			for _, item in ipairs(WindowObj.AccentElements) do
-				if item.Type == "Section" and item.Object then
-					pcall(function()
-						item.Object.Parent.Size = UDim2.new(
-							item.Object.Parent.Size.X.Scale,
-							item.Object.Parent.Size.X.Offset,
-							0,
-							state and math.max(item.Object.Parent.Size.Y.Offset - 20, 30) or item.Object.Parent.Size.Y.Offset
-						)
-					end)
-				end
-			end
 		end
 	})
 	themeSection:CreateToggle({
@@ -640,12 +827,14 @@ end
 
 function library:CreatePage(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self
 	local Page = {
-		Image = (Properties.image or Properties.Image or Properties.icon or Properties.Icon),
-		Size = (Properties.size or Properties.Size or UDim2.new(0, 50, 0, 50)),
+		Image = utility:Resolve(Properties, {"image", "Image", "icon", "Icon"}, nil),
+		Size = utility:Resolve(Properties, {"size", "Size"}, UDim2.new(0, 50, 0, 50)),
 		Open = false,
 		Window = self,
-		Sections = {}
+		Sections = {},
+		IsSettings = (Properties.IsSettings or false)
 	}
 	local Page_Tab = utility:RenderObject("Frame", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -776,7 +965,18 @@ function library:CreatePage(Properties)
 		Page_Tab_Border.Visible = Page.Open
 		Page_Page.Visible = Page.Open
 		tws:Create(Page_Tab_Image, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {ImageColor3 = Page.Open and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(90, 90, 90)}):Play()
+		if not Page.Open then
+			for _, section in ipairs(Page.Sections) do
+				if section and section.Content and section.Content.Open then
+					section:CloseContent()
+				end
+			end
+		end
 		if Page.Open then
+			if Page.UserIndex and Page.Window.SettingsData then
+				Page.Window.SettingsData.lastTab = Page.UserIndex
+				utility:SaveSettings(library.Folder, "isettings.json", Page.Window.SettingsData)
+			end
 			Page.Window:SetPage(Page)
 		end
 	end
@@ -796,10 +996,22 @@ function library:CreatePage(Properties)
 	end)
 
 	if not Properties.IsSettings then
+		Page.Window.UserPageCount = (Page.Window.UserPageCount or 0) + 1
+		Page.UserIndex = Page.Window.UserPageCount
 		if not Page.Window.FirstPageSet then
 			Page.Window.FirstPageSet = true
-			for _, p in ipairs(Page.Window.Pages) do p:Set(false) end
-			Page:Set(true)
+			task.defer(function()
+				local target = Page.Window.SettingsData and Page.Window.SettingsData.lastTab
+				local targetPage = nil
+				for _, p in ipairs(Page.Window.Pages) do
+					if not p.IsSettings and p.UserIndex == target then
+						targetPage = p
+					end
+				end
+				if not targetPage then targetPage = Page end
+				for _, p in ipairs(Page.Window.Pages) do p:Set(false) end
+				targetPage:Set(true)
+			end)
 		end
 	end
 	table.insert(Page.Window.AccentElements, {
@@ -814,10 +1026,11 @@ end
 
 function pages:CreateSection(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Section = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "New Section"),
-		Size = (Properties.size or Properties.Size or 150),
-		Side = (Properties.side or Properties.Side or "Left"),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "New Section"),
+		Size = utility:Resolve(Properties, {"size", "Size"}, 150),
+		Side = utility:Resolve(Properties, {"side", "Side"}, "Left"),
 		Content = {},
 		Window = self.Window,
 		Page = self
@@ -881,6 +1094,30 @@ function pages:CreateSection(Properties)
 		TextSize = 11,
 		TextStrokeTransparency = 1,
 		TextXAlignment = "Left"
+	})
+	local Section_Chevron = utility:RenderObject("TextButton", {
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		BorderSizePixel = 0,
+		Parent = Section_Holder,
+		Position = UDim2.new(1, -26, 0, 3),
+		Size = UDim2.new(0, 22, 0, 16),
+		Text = "",
+		ZIndex = 5
+	})
+	local Chevron_Image = utility:RenderObject("ImageLabel", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		BorderSizePixel = 0,
+		Parent = Section_Chevron,
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.new(0, 7, 0, 6),
+		Image = "rbxassetid://8532000591",
+		ImageColor3 = Color3.fromRGB(130, 130, 130),
+		ZIndex = 5
 	})
 	local Holder_Extra_Gradient1 = utility:RenderObject("ImageLabel", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -1024,8 +1261,40 @@ function pages:CreateSection(Properties)
 		Element = Section,
 		Object = Section_Holder_Title
 	})
+	table.insert(Section.Window.ThemeElements, {Type = "Background", Object = Section_Holder, Shade = "Light"})
+	table.insert(Section.Window.ThemeElements, {Type = "Background", Object = Section_Holder_Frame, Shade = "Base"})
 	Section["Holder"] = Holder_Frame_ContentHolder
 	Section["Extra"] = Section_Holder_Extra
+
+	Section.Collapsed = false
+	Section.OriginalSize = UDim2.new(1, 0, 0, Section.Size)
+
+	local function ApplyCollapsed(state)
+		Section.Collapsed = state
+		Chevron_Image.Rotation = state and 180 or 0
+		Holder_Frame_ContentHolder.Visible = not state
+		Section_Holder_Extra.Visible = not state
+		Section_Holder_Frame.Visible = not state
+		Section_Holder.Size = state and UDim2.new(1, 0, 0, 24) or Section.OriginalSize
+		Section_Holder.ClipsDescendants = state
+	end
+
+	local savedCollapsed = Section.Window.SettingsData and Section.Window.SettingsData.sections and Section.Window.SettingsData.sections[Section.Name]
+	if savedCollapsed then
+		ApplyCollapsed(true)
+	end
+
+	utility:CreateConnection(Section_Chevron.MouseButton1Click, function()
+		if not Section.Collapsed then
+			Section:CloseContent()
+		end
+		ApplyCollapsed(not Section.Collapsed)
+		if Section.Window.SettingsData then
+			Section.Window.SettingsData.sections = Section.Window.SettingsData.sections or {}
+			Section.Window.SettingsData.sections[Section.Name] = Section.Collapsed
+			utility:SaveSettings(library.Folder, "isettings.json", Section.Window.SettingsData)
+		end
+	end)
 
 	function Section:CloseContent()
 		if Section.Content.Open then
@@ -1067,10 +1336,11 @@ end
 
 function sections:CreateToggle(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "New Toggle"),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or false),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "New Toggle"),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, false),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Window = self.Window,
 		Page = self.Page,
 		Section = self
@@ -1094,43 +1364,7 @@ function sections:CreateToggle(Properties)
 		Size = UDim2.new(0, 8, 0, 8),
 		ZIndex = 3
 	})
-	local Content_Holder_Title = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 0),
-		Size = UDim2.new(1, -41, 1, 0),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextXAlignment = "Left"
-	})
-	local Content_Holder_Title2 = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 0),
-		Size = UDim2.new(1, -41, 1, 0),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextTransparency = 0.5,
-		TextXAlignment = "Left"
-	})
+	utility:AddTitle(Content_Holder, UDim2.new(0, 41, 0, 0), UDim2.new(1, -41, 1, 0), Content.Name, Color3.fromRGB(205, 205, 205), 3)
 	local Content_Holder_Button = utility:RenderObject("TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -1193,19 +1427,23 @@ end
 
 function sections:CreateSlider(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or nil),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or false),
-		Min = (Properties.min or Properties.Min or Properties.minimum or Properties.Minimum or 0),
-		Max = (Properties.max or Properties.Max or Properties.maximum or Properties.Maximum or 100),
-		Ending = (Properties.ending or Properties.Ending or Properties.suffix or Properties.Suffix or ""),
-		Decimals = (1 / (Properties.decimals or Properties.Decimals or Properties.tick or Properties.Tick or 1)),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, nil),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, false),
+		Min = utility:Resolve(Properties, {"min", "Min", "minimum", "Minimum"}, 0),
+		Max = utility:Resolve(Properties, {"max", "Max", "maximum", "Maximum"}, 100),
+		Ending = utility:Resolve(Properties, {"ending", "Ending", "suffix", "Suffix"}, ""),
+		Step = utility:Resolve(Properties, {"step", "Step", "decimals", "Decimals", "tick", "Tick"}, 1),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Holding = false,
 		Window = self.Window,
 		Page = self.Page,
 		Section = self
 	}
+	if not (type(Content.Step) == "number") or Content.Step <= 0 then
+		Content.Step = 1
+	end
 	if not Content.State then
 		Content.State = Content.Min
 	end
@@ -1229,43 +1467,7 @@ function sections:CreateSlider(Properties)
 		ZIndex = 3
 	})
 	if Content.Name then
-		local Content_Holder_Title = utility:RenderObject("TextLabel", {
-			AnchorPoint = Vector2.new(0, 0),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 1,
-			BorderColor3 = Color3.fromRGB(0, 0, 0),
-			BorderSizePixel = 0,
-			Parent = Content_Holder,
-			Position = UDim2.new(0, 41, 0, 4),
-			Size = UDim2.new(1, -41, 0, 10),
-			ZIndex = 3,
-			Font = "Code",
-			RichText = true,
-			Text = Content.Name,
-			TextColor3 = Color3.fromRGB(205, 205, 205),
-			TextSize = 9,
-			TextStrokeTransparency = 1,
-			TextXAlignment = "Left"
-		})
-		local Content_Holder_Title2 = utility:RenderObject("TextLabel", {
-			AnchorPoint = Vector2.new(0, 0),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 1,
-			BorderColor3 = Color3.fromRGB(0, 0, 0),
-			BorderSizePixel = 0,
-			Parent = Content_Holder,
-			Position = UDim2.new(0, 41, 0, 4),
-			Size = UDim2.new(1, -41, 0, 10),
-			ZIndex = 3,
-			Font = "Code",
-			RichText = true,
-			Text = Content.Name,
-			TextColor3 = Color3.fromRGB(205, 205, 205),
-			TextSize = 9,
-			TextStrokeTransparency = 1,
-			TextTransparency = 0.5,
-			TextXAlignment = "Left"
-		})
+		utility:AddTitle(Content_Holder, UDim2.new(0, 41, 0, 4), UDim2.new(1, -41, 0, 10), Content.Name, Color3.fromRGB(205, 205, 205), 3)
 	end
 	local Content_Holder_Button = utility:RenderObject("TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -1349,10 +1551,17 @@ function sections:CreateSlider(Properties)
 	})
 
 	function Content:Set(state)
-		Content.State = math.clamp(math.round(state * Content.Decimals) / Content.Decimals, Content.Min, Content.Max)
+		Content.State = math.clamp(math.round(state / Content.Step) * Content.Step, Content.Min, Content.Max)
+		local range = Content.Max - Content.Min
+		local fraction
+		if range > 0 then
+			fraction = 1 - ((Content.Max - Content.State) / range)
+		else
+			fraction = 1
+		end
 		Frame_Slider_Title.Text = "<b>" .. Content.State .. Content.Ending .. "</b>"
 		Frame_Slider_Title2.Text = "<b>" .. Content.State .. Content.Ending .. "</b>"
-		Outline_Frame_Slider.Size = UDim2.new((1 - ((Content.Max - Content.State) / (Content.Max - Content.Min))), 0, 1, 0)
+		Outline_Frame_Slider.Size = UDim2.new(math.clamp(fraction, 0, 1), 0, 1, 0)
 		Content.Callback(Content:Get())
 	end
 
@@ -1363,7 +1572,10 @@ function sections:CreateSlider(Properties)
 		local trackSize = Holder_Outline_Frame.AbsoluteSize
 		local deltaX = Mouse.X - containerPos.X
 		local minX = trackPos.X - containerPos.X
-		local pct = math.clamp((deltaX - minX) / trackSize.X, 0, 1)
+		local pct = 0
+		if trackSize.X > 0 then
+			pct = math.clamp((deltaX - minX) / trackSize.X, 0, 1)
+		end
 		Content:Set(Content.Min + (Content.Max - Content.Min) * pct)
 	end
 
@@ -1416,11 +1628,12 @@ end
 
 function sections:CreateDropdown(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "New Dropdown"),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or 1),
-		Options = (Properties.options or Properties.Options or Properties.list or Properties.List or {1, 2, 3}),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "New Dropdown"),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, 1),
+		Options = utility:Resolve(Properties, {"options", "Options", "list", "List"}, {1, 2, 3}),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Content = {
 			Open = false
 		},
@@ -1447,43 +1660,7 @@ function sections:CreateDropdown(Properties)
 		Size = UDim2.new(1, -98, 0, 20),
 		ZIndex = 3
 	})
-	local Content_Holder_Title = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 4),
-		Size = UDim2.new(1, -41, 0, 10),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextXAlignment = "Left"
-	})
-	local Content_Holder_Title2 = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 4),
-		Size = UDim2.new(1, -41, 0, 10),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextTransparency = 0.5,
-		TextXAlignment = "Left"
-	})
+	utility:AddTitle(Content_Holder, UDim2.new(0, 41, 0, 4), UDim2.new(1, -41, 0, 10), Content.Name, Color3.fromRGB(205, 205, 205), 3)
 	local Content_Holder_Button = utility:RenderObject("TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -1558,7 +1735,12 @@ function sections:CreateDropdown(Properties)
 	})
 
 	function Content:Set(state)
-		Content.State = state
+		local count = #Content.Options
+		if count > 0 then
+			Content.State = math.clamp(state or 1, 1, count)
+		else
+			Content.State = 1
+		end
 		local selectedText = tostring(Content.Options[Content:Get()])
 		Outline_Frame_Title.Text = selectedText
 		Outline_Frame_Title2.Text = selectedText
@@ -1614,7 +1796,7 @@ function sections:CreateDropdown(Properties)
 			ZIndex = 6
 		})
 
-		for Index, Option in pairs(Content.Options) do
+		for Index, Option in ipairs(Content.Options) do
 			local Outline_Frame_Option = utility:RenderObject("Frame", {
 				BackgroundColor3 = Color3.fromRGB(35, 35, 35),
 				BackgroundTransparency = 0,
@@ -1775,13 +1957,14 @@ end
 
 function sections:CreateMultibox(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "New Dropdown"),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or {1}),
-		Options = (Properties.options or Properties.Options or Properties.list or Properties.List or {1, 2, 3}),
-		Minimum = (Properties.min or Properties.Min or Properties.minimum or Properties.Minimum or 0),
-		Maximum = (Properties.max or Properties.Max or Properties.maximum or Properties.Maximum or 1000),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "New Dropdown"),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, {1}),
+		Options = utility:Resolve(Properties, {"options", "Options", "list", "List"}, {1, 2, 3}),
+		Minimum = utility:Resolve(Properties, {"min", "Min", "minimum", "Minimum"}, 0),
+		Maximum = utility:Resolve(Properties, {"max", "Max", "maximum", "Maximum"}, 1000),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Content = {
 			Open = false
 		},
@@ -1808,43 +1991,7 @@ function sections:CreateMultibox(Properties)
 		Size = UDim2.new(1, -98, 0, 20),
 		ZIndex = 3
 	})
-	local Content_Holder_Title = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 4),
-		Size = UDim2.new(1, -41, 0, 10),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextXAlignment = "Left"
-	})
-	local Content_Holder_Title2 = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 4),
-		Size = UDim2.new(1, -41, 0, 10),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextTransparency = 0.5,
-		TextXAlignment = "Left"
-	})
+	utility:AddTitle(Content_Holder, UDim2.new(0, 41, 0, 4), UDim2.new(1, -41, 0, 10), Content.Name, Color3.fromRGB(205, 205, 205), 3)
 	local Content_Holder_Button = utility:RenderObject("TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -1919,6 +2066,7 @@ function sections:CreateMultibox(Properties)
 	})
 
 	function Content:Set(state)
+		state = {table.unpack(state or {})}
 		table.sort(state)
 		Content.State = state
 		local Serialised = utility:Serialise(utility:Sort(Content:Get(), Content.Options))
@@ -1977,7 +2125,7 @@ function sections:CreateMultibox(Properties)
 			ZIndex = 6
 		})
 
-		for Index, Option in pairs(Content.Options) do
+		for Index, Option in ipairs(Content.Options) do
 			local Outline_Frame_Option = utility:RenderObject("Frame", {
 				BackgroundColor3 = Color3.fromRGB(35, 35, 35),
 				BackgroundTransparency = 0,
@@ -2035,7 +2183,10 @@ function sections:CreateMultibox(Properties)
 			})
 
 			local Clicked = utility:CreateConnection(Frame_Option_Button.MouseButton1Click, function()
-				local NewTable = Content:Get()
+				local NewTable = {}
+				for _, Index in ipairs(Content:Get()) do
+					NewTable[#NewTable + 1] = Index
+				end
 				if table.find(NewTable, Index) then
 					if (#NewTable - 1) >= Content.Minimum then
 						table.remove(NewTable, table.find(NewTable, Index))
@@ -2139,11 +2290,12 @@ end
 
 function sections:CreateKeybind(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "New Toggle"),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or nil),
-		Mode = (Properties.mode or Properties.Mode or "Hold"),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "New Toggle"),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, nil),
+		Mode = utility:Resolve(Properties, {"mode", "Mode"}, "Hold"),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Active = false,
 		Holding = false,
 		Window = self.Window,
@@ -2151,9 +2303,9 @@ function sections:CreateKeybind(Properties)
 		Section = self
 	}
 	local Keys = {
-		KeyCodes = {"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Zero", "Insert", "Tab", "Home", "End", "LeftAlt", "LeftControl", "LeftShift", "RightAlt", "RightControl", "RightShift", "CapsLock"},
+		KeyCodes = {"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Zero", "Insert", "Tab", "Home", "End", "PageUp", "PageDown", "Delete", "Backspace", "Enter", "Space", "Escape", "Backquote", "Minus", "Equals", "LeftBracket", "RightBracket", "Backslash", "Semicolon", "Quote", "Comma", "Period", "Slash", "Up", "Down", "Left", "Right", "LeftAlt", "LeftControl", "LeftShift", "RightAlt", "RightControl", "RightShift", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"},
 		Inputs = {"MouseButton1", "MouseButton2", "MouseButton3"},
-		Shortened = {["MouseButton1"] = "M1", ["MouseButton2"] = "M2", ["MouseButton3"] = "M3", ["Insert"] = "INS", ["LeftAlt"] = "LA", ["LeftControl"] = "LC", ["LeftShift"] = "LS", ["RightAlt"] = "RA", ["RightControl"] = "RC", ["RightShift"] = "RS", ["CapsLock"] = "CL"}
+		Shortened = {["MouseButton1"] = "M1", ["MouseButton2"] = "M2", ["MouseButton3"] = "M3", ["Insert"] = "INS", ["LeftAlt"] = "LA", ["LeftControl"] = "LC", ["LeftShift"] = "LS", ["RightAlt"] = "RA", ["RightControl"] = "RC", ["RightShift"] = "RS", ["CapsLock"] = "CL", ["Backquote"] = "`", ["PageUp"] = "PU", ["PageDown"] = "PD", ["Backspace"] = "BKS", ["Escape"] = "ESC", ["Equals"] = "=", ["Minus"] = "-", ["LeftBracket"] = "[", ["RightBracket"] = "]", ["Semicolon"] = ";", ["Quote"] = "'", ["Comma"] = ",", ["Period"] = ".", ["Slash"] = "/", ["F1"] = "F1", ["F2"] = "F2", ["F3"] = "F3", ["F4"] = "F4", ["F5"] = "F5", ["F6"] = "F6", ["F7"] = "F7", ["F8"] = "F8", ["F9"] = "F9", ["F10"] = "F10", ["F11"] = "F11", ["F12"] = "F12"}
 	}
 	local Content_Holder = utility:RenderObject("Frame", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -2164,43 +2316,7 @@ function sections:CreateKeybind(Properties)
 		Size = UDim2.new(1, 0, 0, 18),
 		ZIndex = 3
 	})
-	local Content_Holder_Title = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 0),
-		Size = UDim2.new(1, -41, 1, 0),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextXAlignment = "Left"
-	})
-	local Content_Holder_Title2 = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 0),
-		Size = UDim2.new(1, -41, 1, 0),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextTransparency = 0.5,
-		TextXAlignment = "Left"
-	})
+	utility:AddTitle(Content_Holder, UDim2.new(0, 41, 0, 0), UDim2.new(1, -41, 1, 0), Content.Name, Color3.fromRGB(205, 205, 205), 3)
 	local Content_Holder_Button = utility:RenderObject("TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -2281,6 +2397,7 @@ function sections:CreateKeybind(Properties)
 	end)
 
 	utility:CreateConnection(uis.InputBegan, function(Input)
+		if uis:GetFocusedTextBox() and not Content.Holding then return end
 		if Content.Holding then
 			local Success = Content:Change(Input.KeyCode.Name ~= "Unknown" and Input.KeyCode or Input.UserInputType)
 			if Success then
@@ -2302,6 +2419,7 @@ function sections:CreateKeybind(Properties)
 	end)
 
 	utility:CreateConnection(uis.InputEnded, function(Input)
+		if uis:GetFocusedTextBox() then return end
 		if Content:Get()[1] and Content:Get()[2] then
 			if Input.KeyCode == Enum[Content:Get()[1]][Content:Get()[2]] or Input.UserInputType == Enum[Content:Get()[1]][Content:Get()[2]] then
 				if Content.Mode == "Hold" then
@@ -2321,10 +2439,11 @@ end
 
 function sections:CreateColorpicker(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "New Toggle"),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or Color3.fromRGB(255, 255, 255)),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "New Toggle"),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, Color3.fromRGB(255, 255, 255)),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Content = {
 			Open = false
 		},
@@ -2351,43 +2470,7 @@ function sections:CreateColorpicker(Properties)
 		Size = UDim2.new(0, 17, 0, 9),
 		ZIndex = 3
 	})
-	local Content_Holder_Title = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 0),
-		Size = UDim2.new(1, -41, 1, 0),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextXAlignment = "Left"
-	})
-	local Content_Holder_Title2 = utility:RenderObject("TextLabel", {
-		AnchorPoint = Vector2.new(0, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 0),
-		Size = UDim2.new(1, -41, 1, 0),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextTransparency = 0.5,
-		TextXAlignment = "Left"
-	})
+	utility:AddTitle(Content_Holder, UDim2.new(0, 41, 0, 0), UDim2.new(1, -41, 1, 0), Content.Name, Color3.fromRGB(205, 205, 205), 3)
 	local Content_Holder_Button = utility:RenderObject("TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -2426,7 +2509,6 @@ function sections:CreateColorpicker(Properties)
 
 	function Content:Open()
 		Content.Section:CloseContent()
-		local Connections = {}
 		local InputCheck
 		
 		local outlinePos = Content_Holder_Outline.AbsolutePosition
@@ -2619,9 +2701,6 @@ function sections:CreateColorpicker(Properties)
 
 		function Content.Content:Close()
 			Content.Content.Open = false
-			for _, Value in ipairs(Connections) do
-				utility:DisconnectConnection(Value)
-			end
 			utility:DisconnectConnection(InputBegan)
 			utility:DisconnectConnection(InputChanged)
 			utility:DisconnectConnection(InputEnded)
@@ -2638,7 +2717,6 @@ function sections:CreateColorpicker(Properties)
 			utility:DestroyObject(Open_Holder_Button)
 			utility:DestroyObject(Content_Open_Holder)
 			function Content.Content:Refresh() end
-			Connections = nil
 		end
 
 		function Content.Content:Refresh()
@@ -2678,9 +2756,10 @@ end
 
 function sections:CreateButton(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "Button"),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "Button"),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Window = self.Window,
 		Page = self.Page,
 		Section = self
@@ -2758,10 +2837,11 @@ end
 
 function sections:CreateTextBox(Properties)
 	Properties = Properties or {}
+	library.CurrentWindow = self.Window
 	local Content = {
-		Name = (Properties.name or Properties.Name or Properties.title or Properties.Title or "Text Box"),
-		State = (Properties.state or Properties.State or Properties.def or Properties.Def or Properties.default or Properties.Default or ""),
-		Callback = (Properties.callback or Properties.Callback or Properties.callBack or Properties.CallBack or function() end),
+		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, "Text Box"),
+		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, ""),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "callBack", "CallBack"}, function() end),
 		Window = self.Window,
 		Page = self.Page,
 		Section = self
@@ -2783,22 +2863,7 @@ function sections:CreateTextBox(Properties)
 		Size = UDim2.new(1, -98, 0, 20),
 		ZIndex = 3
 	})
-	local Content_Holder_Title = utility:RenderObject("TextLabel", {
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Parent = Content_Holder,
-		Position = UDim2.new(0, 41, 0, 4),
-		Size = UDim2.new(1, -41, 0, 10),
-		ZIndex = 3,
-		Font = "Code",
-		RichText = true,
-		Text = Content.Name,
-		TextColor3 = Color3.fromRGB(205, 205, 205),
-		TextSize = 9,
-		TextStrokeTransparency = 1,
-		TextXAlignment = "Left"
-	})
+	utility:AddLabel(Content_Holder, UDim2.new(0, 41, 0, 4), UDim2.new(1, -41, 0, 10), Content.Name, Color3.fromRGB(205, 205, 205), 0, 3)
 	local Holder_Outline_Frame = utility:RenderObject("Frame", {
 		BackgroundColor3 = Color3.fromRGB(36, 36, 36),
 		BackgroundTransparency = 0,
