@@ -303,7 +303,7 @@ function library:CreateWindow(Properties)
 
 	function Window:Fade(state)
 		if Window.Blur then
-			tws:Create(blurEffect, TweenInfo.new(0.25, Enum.EasingStyle.Linear), {Size = state and 24 or 0}):Play()
+			tws:Create(blurEffect, TweenInfo.new(0.25, Enum.EasingStyle.Linear), {Size = state and (Window.BlurStrength or 24) or 0}):Play()
 		else
 			tws:Create(blurEffect, TweenInfo.new(0.25, Enum.EasingStyle.Linear), {Size = 0}):Play()
 		end
@@ -556,7 +556,7 @@ function library:CreateWindow(Properties)
 		Name = "Toggle Keybind",
 		State = {"KeyCode", "Insert"},
 		Callback = function(val)
-			if val and val[1] == "KeyCode" then
+			if type(val) == "table" and val[1] == "KeyCode" then
 				WindowObj.Key = Enum.KeyCode[val[2]]
 			end
 		end
@@ -690,6 +690,13 @@ function library:CreateWindow(Properties)
 		end
 	})
 
+	configSection:CreateButton({
+		Name = "Unload GUI",
+		Callback = function()
+			WindowObj:Unload()
+		end
+	})
+
 	local themeSection = settings_page:CreateSection({Name = "Theme", Size = 330, Side = "Left"})
 	themeSection:CreateColorpicker({
 		Name = "Accent Color",
@@ -724,6 +731,16 @@ function library:CreateWindow(Properties)
 			end)
 		end
 	})
+	themeSection:CreateSlider({
+		Name = "Rainbow Speed",
+		Min = 0.01,
+		Max = 0.5,
+		Step = 0.01,
+		State = 0.05,
+		Callback = function(value)
+			WindowObj.RainbowSpeed = value
+		end
+	})
 	themeSection:CreateToggle({
 		Name = "Rainbow Accent",
 		State = false,
@@ -735,10 +752,19 @@ function library:CreateWindow(Properties)
 					while WindowObj.RainbowAccent do
 						hue = (hue + 1) % 360
 						WindowObj:SetAccent(Color3.fromHSV(hue / 360, 1, 1))
-						task.wait(0.05)
+						task.wait(WindowObj.RainbowSpeed or 0.05)
 					end
 				end)
 			end
+		end
+	})
+	themeSection:CreateSlider({
+		Name = "Blur Strength",
+		Min = 0,
+		Max = 50,
+		State = 24,
+		Callback = function(value)
+			WindowObj.BlurStrength = value
 		end
 	})
 
@@ -924,22 +950,30 @@ function library:CreatePage(Properties)
 		Size = UDim2.new(1, -40, 1, -40),
 		Visible = false
 	})
-	local Page_Page_Left = utility:RenderObject("Frame", {
+	local Page_Page_Left = utility:RenderObject("ScrollingFrame", {
+		AutomaticCanvasSize = "Y",
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
 		Parent = Page_Page,
 		Position = UDim2.new(0, 0, 0, 0),
+		ScrollBarThickness = 0,
+		ScrollingDirection = "Y",
 		Size = UDim2.new(0.5, -10, 1, 0)
 	})
-	local Page_Page_Right = utility:RenderObject("Frame", {
+	local Page_Page_Right = utility:RenderObject("ScrollingFrame", {
+		AutomaticCanvasSize = "Y",
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
 		Parent = Page_Page,
 		Position = UDim2.new(0.5, 10, 0, 0),
+		ScrollBarThickness = 0,
+		ScrollingDirection = "Y",
 		Size = UDim2.new(0.5, -10, 1, 0)
 	})
 	local Page_Left_List = utility:RenderObject("UIListLayout", {
@@ -1147,56 +1181,6 @@ function pages:CreateSection(Properties)
 		Image = "rbxassetid://7783533907",
 		ImageColor3 = Color3.fromRGB(23, 23, 23)
 	})
-	local Holder_Extra_ArrowUp = utility:RenderObject("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(255, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Section_Holder_Extra,
-		Position = UDim2.new(1, -21, 0, 0),
-		Size = UDim2.new(0, 15, 0, 14),
-		Text = "",
-		Visible = false,
-		ZIndex = 4
-	})
-	local Holder_Extra_ArrowDown = utility:RenderObject("TextButton", {
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Section_Holder_Extra,
-		Position = UDim2.new(1, -21, 1, -14),
-		Size = UDim2.new(0, 15, 0, 14),
-		Text = "",
-		Visible = false,
-		ZIndex = 4
-	})
-	local Extra_ArrowUp_Image = utility:RenderObject("ImageLabel", {
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Holder_Extra_ArrowUp,
-		Position = UDim2.new(0, 4, 0, 4),
-		Size = UDim2.new(0, 7, 0, 6),
-		Visible = true,
-		ZIndex = 4,
-		Image = "rbxassetid://8548757311",
-		ImageColor3 = Color3.fromRGB(205, 205, 205)
-	})
-	local Extra_ArrowDown_Image = utility:RenderObject("ImageLabel", {
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 1,
-		BorderColor3 = Color3.fromRGB(0, 0, 0),
-		BorderSizePixel = 0,
-		Parent = Holder_Extra_ArrowDown,
-		Position = UDim2.new(0, 4, 0, 4),
-		Size = UDim2.new(0, 7, 0, 6),
-		Visible = true,
-		ZIndex = 4,
-		Image = "rbxassetid://8548723563",
-		ImageColor3 = Color3.fromRGB(205, 205, 205)
-	})
 	local Holder_Extra_Bar = utility:RenderObject("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = Color3.fromRGB(45, 45, 45),
@@ -1308,10 +1292,6 @@ function pages:CreateSection(Properties)
 		Holder_Extra_Gradient1.Visible = canvasY
 		Holder_Extra_Gradient2.Visible = canvasY
 		Holder_Extra_Bar.Visible = canvasY
-		if canvasY then
-			Holder_Extra_ArrowUp.Visible = (Holder_Frame_ContentHolder.CanvasPosition.Y > 5)
-			Holder_Extra_ArrowDown.Visible = (Holder_Frame_ContentHolder.CanvasPosition.Y + 5 < (Holder_Frame_ContentHolder.AbsoluteCanvasSize.Y - Holder_Frame_ContentHolder.AbsoluteSize.Y))
-		end
 	end)
 
 	utility:CreateConnection(Holder_Frame_ContentHolder:GetPropertyChangedSignal("CanvasPosition"), function()
@@ -1319,16 +1299,6 @@ function pages:CreateSection(Properties)
 			Section.Content:Close()
 			Section.Content = {}
 		end
-		Holder_Extra_ArrowUp.Visible = (Holder_Frame_ContentHolder.CanvasPosition.Y > 1)
-		Holder_Extra_ArrowDown.Visible = (Holder_Frame_ContentHolder.CanvasPosition.Y + 1 < (Holder_Frame_ContentHolder.AbsoluteCanvasSize.Y - Holder_Frame_ContentHolder.AbsoluteSize.Y))
-	end)
-
-	utility:CreateConnection(Holder_Extra_ArrowUp.MouseButton1Click, function()
-		Holder_Frame_ContentHolder.CanvasPosition = Vector2.new(0, math.clamp(Holder_Frame_ContentHolder.CanvasPosition.Y - 10, 0, Holder_Frame_ContentHolder.AbsoluteCanvasSize.Y - Holder_Frame_ContentHolder.AbsoluteSize.Y))
-	end)
-
-	utility:CreateConnection(Holder_Extra_ArrowDown.MouseButton1Click, function()
-		Holder_Frame_ContentHolder.CanvasPosition = Vector2.new(0, math.clamp(Holder_Frame_ContentHolder.CanvasPosition.Y + 10, 0, Holder_Frame_ContentHolder.AbsoluteCanvasSize.Y - Holder_Frame_ContentHolder.AbsoluteSize.Y))
 	end)
 
 	return setmetatable(Section, sections)
@@ -2597,6 +2567,7 @@ function sections:CreateColorpicker(Properties)
 			Image = "rbxassetid://4155801252"
 		})
 		local ValSat_Picker_Cursor = utility:RenderObject("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
 			BorderColor3 = Color3.fromRGB(0, 0, 0),
 			BorderSizePixel = 1,
@@ -2626,6 +2597,7 @@ function sections:CreateColorpicker(Properties)
 			Parent = Hue_Picker_Color
 		})
 		local Hue_Picker_Cursor = utility:RenderObject("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
 			BorderColor3 = Color3.fromRGB(0, 0, 0),
 			BorderSizePixel = 1,
@@ -2640,8 +2612,8 @@ function sections:CreateColorpicker(Properties)
 			local color = Color3.fromHSV(ColorH, ColorS, ColorV)
 			Content:Set(color)
 			ValSat_Picker_Color.BackgroundColor3 = Color3.fromHSV(ColorH, 1, 1)
-			ValSat_Picker_Cursor.Position = UDim2.new(ColorS, -2, 1 - ColorV, -2)
-			Hue_Picker_Cursor.Position = UDim2.new(0, 0, ColorH, -2)
+			ValSat_Picker_Cursor.Position = UDim2.new(ColorS, 0, 1 - ColorV, 0)
+			Hue_Picker_Cursor.Position = UDim2.new(0, 0, ColorH, 0)
 		end
 
 		local ValSatDragging = false
@@ -2722,8 +2694,8 @@ function sections:CreateColorpicker(Properties)
 		function Content.Content:Refresh()
 			ColorH, ColorS, ColorV = Content.State:ToHSV()
 			ValSat_Picker_Color.BackgroundColor3 = Color3.fromHSV(ColorH, 1, 1)
-			ValSat_Picker_Cursor.Position = UDim2.new(ColorS, -2, 1 - ColorV, -2)
-			Hue_Picker_Cursor.Position = UDim2.new(0, 0, ColorH, -2)
+			ValSat_Picker_Cursor.Position = UDim2.new(ColorS, 0, 1 - ColorV, 0)
+			Hue_Picker_Cursor.Position = UDim2.new(0, 0, ColorH, 0)
 		end
 		
 		Content.Content.Open = true
