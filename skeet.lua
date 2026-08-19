@@ -1853,7 +1853,7 @@ function sections:CreateDropdown(Properties)
 				ZIndex = 6
 			})
 
-			local Clicked = utility:CreateConnection(Frame_Option_Button.MouseButton1Click, function()
+			local Clicked = utility:CreateConnection(Frame_Option_Button.MouseButton1Down, function()
 				Content:Set(Index)
 			end)
 			local Entered = utility:CreateConnection(Frame_Option_Button.MouseEnter, function()
