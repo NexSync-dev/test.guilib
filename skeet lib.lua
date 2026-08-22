@@ -16,6 +16,21 @@ local library = {
 }
 library.__index = library
 
+function library.UpdateBlurSize()
+	local Target = 0
+	for _, Window in ipairs(library.Windows) do
+		if not Window.Unloaded and Window.Enabled and Window.Blur then
+			Target = math.max(Target, Window.BlurStrength or 24)
+		end
+	end
+	pcall(function()
+		local BlurEffect = game:GetService("Lighting"):FindFirstChild("_SkeetLibBlur")
+		if BlurEffect then
+			BlurEffect.Size = Target
+		end
+	end)
+end
+
 local utility = {}
 local pages = {}
 local sections = {}
@@ -419,7 +434,19 @@ function library:CreateWindow(Properties)
 		if Window.Unloaded then return end
 		local Direction = state and Enum.EasingDirection.Out or Enum.EasingDirection.In
 		local Info = TweenInfo.new(0.25, Enum.EasingStyle.Linear, Direction)
-		TweenService:Create(blurEffect, Info, {Size = (state and Window.Blur and Window.BlurStrength or 0)}):Play()
+		local LiveWindows = 0
+		for _, LiveWindow in ipairs(library.Windows) do
+			if not LiveWindow.Unloaded then
+				LiveWindows = LiveWindows + 1
+			end
+		end
+		if LiveWindows <= 1 then
+			TweenService:Create(blurEffect, Info, {Size = (state and Window.Blur and Window.BlurStrength or 0)}):Play()
+		else
+			task.defer(function()
+				library.UpdateBlurSize()
+			end)
+		end
 		for Inst, Record in pairs(library.Renders) do
 			if Record.Window == self and not Record.Hidden and Inst.Parent ~= nil then
 				local PropList = FadeProperties[Inst.ClassName]
@@ -507,6 +534,7 @@ function library:CreateWindow(Properties)
 				table.remove(library.Windows, Index)
 			end
 		end
+		library.UpdateBlurSize()
 		if library.CurrentWindow == self then
 			library.CurrentWindow = nil
 		end
@@ -779,7 +807,7 @@ function library:CreateWindow(Properties)
 			State = Window.SettingsData.uiBlur == true,
 			Callback = function(state)
 				WindowObj.Blur = state
-				blurEffect.Size = (state and WindowObj.Enabled) and (WindowObj.BlurStrength or 24) or 0
+				library.UpdateBlurSize()
 				Window.SettingsData.uiBlur = state
 				QueueSaveSettings()
 			end
@@ -1036,9 +1064,7 @@ function library:CreateWindow(Properties)
 			State = Window.SettingsData.blurStrength or 24,
 			Callback = function(value)
 				WindowObj.BlurStrength = value
-				if WindowObj.Blur and WindowObj.Enabled then
-					blurEffect.Size = value
-				end
+				library.UpdateBlurSize()
 				Window.SettingsData.blurStrength = value
 				QueueSaveSettings()
 			end
@@ -1083,9 +1109,7 @@ function library:CreateWindow(Properties)
 				end
 			end)
 			pcall(function()
-				if WindowObj.Enabled and WindowObj.Blur then
-					blurEffect.Size = WindowObj.BlurStrength or 24
-				end
+				library.UpdateBlurSize()
 			end)
 		end
 
@@ -2258,23 +2282,23 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		local OverlaySize = PageOverlay.AbsoluteSize
 		local AnchorPos = Content_Holder_Outline.AbsolutePosition
 		local AnchorSize = Content_Holder_Outline.AbsoluteSize
+		local OverlayTop = OverlayAbs.Y
+		local OverlayBottom = OverlayAbs.Y + OverlaySize.Y
 		local AnchorTop = AnchorPos.Y
 		local AnchorBottom = AnchorTop + AnchorSize.Y
-		if AnchorBottom < OverlayAbs.Y or AnchorTop > OverlayAbs.Y + OverlaySize.Y then
-			Content:Close()
-			return
-		end
 		local Width = Popup_Holder.AbsoluteSize.X
 		local Height = Popup_Holder.AbsoluteSize.Y
 		local DesiredY
-		local BelowY = AnchorBottom + 2
-		local AboveY = AnchorTop - Height - 2
-		if BelowY + Height <= OverlayAbs.Y + OverlaySize.Y then
-			DesiredY = BelowY
-		elseif AboveY >= OverlayAbs.Y then
-			DesiredY = AboveY
+		if AnchorBottom < OverlayTop + Height then
+			DesiredY = OverlayTop
+		elseif AnchorTop > OverlayBottom - Height then
+			DesiredY = math.max(OverlayBottom - Height, OverlayTop)
+		elseif AnchorBottom + 2 + Height <= OverlayBottom then
+			DesiredY = AnchorBottom + 2
+		elseif AnchorTop - Height - 2 >= OverlayTop then
+			DesiredY = AnchorTop - Height - 2
 		else
-			DesiredY = math.clamp(AnchorTop, OverlayAbs.Y, math.max(OverlayAbs.Y, OverlayAbs.Y + OverlaySize.Y - Height))
+			DesiredY = math.clamp(AnchorTop, OverlayTop, math.max(OverlayTop, OverlayBottom - Height))
 		end
 		local DesiredX = AnchorPos.X
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
@@ -3344,23 +3368,23 @@ function sections:CreateColorpicker(Properties)
 		local OverlaySize = Content.Page.Page.AbsoluteSize
 		local AnchorPos = Content_Holder_Outline.AbsolutePosition
 		local AnchorSize = Content_Holder_Outline.AbsoluteSize
+		local OverlayTop = OverlayAbs.Y
+		local OverlayBottom = OverlayAbs.Y + OverlaySize.Y
 		local AnchorTop = AnchorPos.Y
 		local AnchorBottom = AnchorTop + AnchorSize.Y
-		if AnchorBottom < OverlayAbs.Y or AnchorTop > OverlayAbs.Y + OverlaySize.Y then
-			Content:Close()
-			return
-		end
 		local Width = Popup_Holder.AbsoluteSize.X
 		local Height = Popup_Holder.AbsoluteSize.Y
 		local DesiredY
-		local BelowY = AnchorBottom + 2
-		local AboveY = AnchorTop - Height - 2
-		if BelowY + Height <= OverlayAbs.Y + OverlaySize.Y then
-			DesiredY = BelowY
-		elseif AboveY >= OverlayAbs.Y then
-			DesiredY = AboveY
+		if AnchorBottom < OverlayTop + Height then
+			DesiredY = OverlayTop
+		elseif AnchorTop > OverlayBottom - Height then
+			DesiredY = math.max(OverlayBottom - Height, OverlayTop)
+		elseif AnchorBottom + 2 + Height <= OverlayBottom then
+			DesiredY = AnchorBottom + 2
+		elseif AnchorTop - Height - 2 >= OverlayTop then
+			DesiredY = AnchorTop - Height - 2
 		else
-			DesiredY = math.clamp(AnchorTop, OverlayAbs.Y, math.max(OverlayAbs.Y, OverlayAbs.Y + OverlaySize.Y - Height))
+			DesiredY = math.clamp(AnchorTop, OverlayTop, math.max(OverlayTop, OverlayBottom - Height))
 		end
 		local DesiredX = AnchorPos.X - Width + AnchorSize.X
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
