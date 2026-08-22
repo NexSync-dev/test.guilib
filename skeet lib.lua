@@ -1259,7 +1259,7 @@ function pages:CreateSection(Properties)
 	}
 	table.insert(self.Sections, Section)
 
-	local Column = self[self.Side == "Right" and "Right" or "Left"]
+	local Column = self[Section.Side == "Right" and "Right" or "Left"]
 	local Section_Holder = utility:RenderObject(Window, "Frame", {
 		BackgroundColor3 = Color3.fromRGB(40, 40, 40),
 		BackgroundTransparency = 0,
