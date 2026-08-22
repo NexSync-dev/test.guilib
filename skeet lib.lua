@@ -686,9 +686,10 @@ function library:CreateWindow(Properties)
 	end
 	if Window.ShowSettings then
 		local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999, IsSettings = true})
-		local configSection = settings_page:CreateSection({Name = "Configuration", Size = 280, Side = "Left"})
+		local menuSection = settings_page:CreateSection({Name = "Menu", Size = 155, Side = "Left"})
+		local configSection = settings_page:CreateSection({Name = "Configs", Size = 230, Side = "Left"})
 
-		configSection:CreateKeybind({
+		menuSection:CreateKeybind({
 			Name = "Toggle Keybind",
 			State = {"KeyCode", "Insert"},
 			Callback = function(val)
@@ -698,7 +699,7 @@ function library:CreateWindow(Properties)
 			end
 		})
 
-		configSection:CreateToggle({
+		menuSection:CreateToggle({
 			Name = "UI Blur",
 			State = false,
 			Callback = function(state)
@@ -707,7 +708,7 @@ function library:CreateWindow(Properties)
 			end
 		})
 
-		configSection:CreateToggle({
+		menuSection:CreateToggle({
 			Name = "Save UI State",
 			State = Window.AutoSave,
 			Callback = function(state)
@@ -878,7 +879,7 @@ function library:CreateWindow(Properties)
 			end
 		})
 
-		configSection:CreateButton({
+		menuSection:CreateButton({
 			Name = "Unload GUI",
 			Callback = function()
 				WindowObj:Unload()
