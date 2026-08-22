@@ -485,6 +485,11 @@ function library:CreateWindow(Properties)
 		Window.Unloaded = true
 		Window.RainbowAccent = false
 		Window.Enabled = false
+		pcall(function()
+			if Window.SettingsData and Window.AutoSave and utility.SaveSettings and writefile then
+				utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
+			end
+		end)
 		if Window.OpenContent and Window.OpenContent.Close then
 			pcall(function() Window.OpenContent:Close() end)
 		end
@@ -775,15 +780,21 @@ function library:CreateWindow(Properties)
 		local configSection = settings_page:CreateSection({Name = "Configs", Size = 260, Side = "Left"})
 
 		local settingsSavePending = false
+		local function SaveSettingsNow()
+			settingsSavePending = false
+			if Window.Unloaded or not Window.AutoSave then return end
+			pcall(function()
+				utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
+			end)
+		end
 		local function QueueSaveSettings()
-			if not Window.AutoSave or settingsSavePending then return end
+			if Window.AutoSave == false then return end
+			if settingsSavePending then return end
 			settingsSavePending = true
 			task.delay(0.4, function()
-				settingsSavePending = false
-				if Window.Unloaded or not Window.AutoSave then return end
-				pcall(function()
-					utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
-				end)
+				if settingsSavePending then
+					SaveSettingsNow()
+				end
 			end)
 		end
 
@@ -796,7 +807,7 @@ function library:CreateWindow(Properties)
 					WindowObj.Key = Enum.KeyCode[val[2]]
 					if type(val[2]) == "string" then
 						Window.SettingsData.toggleKey = val[2]
-						QueueSaveSettings()
+						SaveSettingsNow()
 					end
 				end
 			end
@@ -809,7 +820,7 @@ function library:CreateWindow(Properties)
 				WindowObj.Blur = state
 				library.UpdateBlurSize()
 				Window.SettingsData.uiBlur = state
-				QueueSaveSettings()
+				SaveSettingsNow()
 			end
 		})
 
@@ -829,7 +840,7 @@ function library:CreateWindow(Properties)
 			Callback = function(state)
 				Window.PopupsFollowScroll = state
 				Window.SettingsData.popupFollowScroll = state
-				QueueSaveSettings()
+				SaveSettingsNow()
 			end
 		})
 
@@ -1137,6 +1148,7 @@ function library:CreateWindow(Properties)
 			Callback = function()
 				local target = jobIdBox:Get()
 				if target and target ~= "" then
+					SaveSettingsNow()
 					game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, target, game:GetService("Players").LocalPlayer)
 				end
 			end
@@ -1149,6 +1161,7 @@ function library:CreateWindow(Properties)
 			local Players = game:GetService("Players")
 			local PlaceId = game.PlaceId
 			local JobId = game.JobId
+			SaveSettingsNow()
 			hopStatus:Set("hop: searching...")
 			local success, servers = pcall(function()
 				return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
@@ -1212,16 +1225,22 @@ function library:CreateWindow(Properties)
 			waited = waited + 0.25
 		end
 		if WindowObj.Unloaded or not WindowObj.Elements or next(WindowObj.Elements) == nil then return end
-		local configName = WindowObj.SettingsData.config
-		if type(configName) ~= "string" or configName == "" then
-			if WindowObj.SetConfigStatus then
-				WindowObj.SetConfigStatus("auto load: no config selected")
-			end
-			return
-		end
-		local status = ApplyConfigByName(configName)
+	local configName = WindowObj.SettingsData.config
+	if type(configName) ~= "string" or configName == "" then
 		if WindowObj.SetConfigStatus then
-			WindowObj.SetConfigStatus("auto " .. status)
+			WindowObj.SetConfigStatus("auto load: no config selected")
+		end
+		return
+	end
+	local status = ApplyConfigByName(configName)
+	if WindowObj.SetConfigStatus then
+		WindowObj.SetConfigStatus("auto " .. status)
+	end
+	end)
+
+	task.defer(function()
+		if not WindowObj.Unloaded then
+			library.UpdateBlurSize()
 		end
 	end)
 
@@ -2277,7 +2296,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	end
 
 	function Content:Reposition()
-		if not Popup_Holder.Visible then return end
+		if not Popup_Holder.Visible and not Content._ScrollHidden then return end
 		local OverlayAbs = PageOverlay.AbsolutePosition
 		local OverlaySize = PageOverlay.AbsoluteSize
 		local AnchorPos = Content_Holder_Outline.AbsolutePosition
@@ -2286,6 +2305,19 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		local OverlayBottom = OverlayAbs.Y + OverlaySize.Y
 		local AnchorTop = AnchorPos.Y
 		local AnchorBottom = AnchorTop + AnchorSize.Y
+		if AnchorBottom < OverlayTop or AnchorTop > OverlayBottom then
+			if not Content._ScrollHidden then
+				Content._ScrollHidden = true
+				Popup_Holder.Visible = false
+				Popup_Catcher.Visible = false
+			end
+			return
+		end
+		if Content._ScrollHidden then
+			Content._ScrollHidden = nil
+			Popup_Catcher.Visible = true
+			Popup_Holder.Visible = true
+		end
 		local Width = Popup_Holder.AbsoluteSize.X
 		local Height = Popup_Holder.AbsoluteSize.Y
 		local DesiredY
@@ -2310,6 +2342,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		Window:CloseOpenPopup()
 		Window.OpenContent = Content
 		Popup_Holder.Size = UDim2.new(0, math.max(Content_Holder_Outline.AbsoluteSize.X, 40), 0, listHeight)
+		Content._ScrollHidden = nil
 		Popup_Catcher.Visible = true
 		Popup_Holder.Visible = true
 		TweenService:Create(Arrow_Image, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 180}):Play()
@@ -2318,7 +2351,8 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	end
 
 	function Content:Close()
-		if not Popup_Holder.Visible then return end
+		if not Popup_Holder.Visible and not Content._ScrollHidden then return end
+		Content._ScrollHidden = nil
 		Popup_Holder.Visible = false
 		Popup_Catcher.Visible = false
 		TweenService:Create(Arrow_Image, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 0}):Play()
@@ -2328,7 +2362,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	end
 
 	function Content:IsOpen()
-		return Popup_Holder.Visible
+		return Popup_Holder.Visible or Content._ScrollHidden == true
 	end
 
 	function Content:GetPopupHolder()
@@ -3363,7 +3397,7 @@ function sections:CreateColorpicker(Properties)
 	end
 
 	function Content:Reposition()
-		if not Popup_Holder or not Popup_Holder.Visible then return end
+		if not Popup_Holder or (not Popup_Holder.Visible and not Content._ScrollHidden) then return end
 		local OverlayAbs = Content.Page.Page.AbsolutePosition
 		local OverlaySize = Content.Page.Page.AbsoluteSize
 		local AnchorPos = Content_Holder_Outline.AbsolutePosition
@@ -3372,6 +3406,23 @@ function sections:CreateColorpicker(Properties)
 		local OverlayBottom = OverlayAbs.Y + OverlaySize.Y
 		local AnchorTop = AnchorPos.Y
 		local AnchorBottom = AnchorTop + AnchorSize.Y
+		if AnchorBottom < OverlayTop or AnchorTop > OverlayBottom then
+			if not Content._ScrollHidden then
+				Content._ScrollHidden = true
+				Popup_Holder.Visible = false
+				if Content.Catcher then
+					Content.Catcher.Visible = false
+				end
+			end
+			return
+		end
+		if Content._ScrollHidden then
+			Content._ScrollHidden = nil
+			if Content.Catcher then
+				Content.Catcher.Visible = true
+			end
+			Popup_Holder.Visible = true
+		end
 		local Width = Popup_Holder.AbsoluteSize.X
 		local Height = Popup_Holder.AbsoluteSize.Y
 		local DesiredY
@@ -3399,6 +3450,7 @@ function sections:CreateColorpicker(Properties)
 		Parts.H, Parts.S, Parts.V = Content_HSV[1], Content_HSV[2], Content_HSV[3]
 		Parts.DraggingValSat = false
 		Parts.DraggingHue = false
+		Content._ScrollHidden = nil
 		Popup_Holder.Visible = true
 		Content:Reposition()
 		if Content.Catcher then
@@ -3408,7 +3460,8 @@ function sections:CreateColorpicker(Properties)
 	end
 
 	function Content:Close()
-		if not Popup_Holder or not Popup_Holder.Visible then return end
+		if not Popup_Holder or (not Popup_Holder.Visible and not Content._ScrollHidden) then return end
+		Content._ScrollHidden = nil
 		Popup_Holder.Visible = false
 		if Content.Catcher then
 			Content.Catcher.Visible = false
@@ -3420,7 +3473,7 @@ function sections:CreateColorpicker(Properties)
 	end
 
 	function Content:IsOpen()
-		return Popup_Holder ~= nil and Popup_Holder.Visible
+		return Popup_Holder ~= nil and (Popup_Holder.Visible or Content._ScrollHidden == true)
 	end
 
 	function Content:GetPopupHolder()
