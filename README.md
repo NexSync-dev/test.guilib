@@ -24,6 +24,8 @@ Every window automatically includes a **Settings** page (last tab icon) with con
 | `Key` | `Enum.KeyCode` | `Enum.KeyCode.Insert` | Show/hide toggle key |
 | `ShowSettings` | `boolean` | `true` | Append the built-in Settings page |
 | `TextScale` | `number` | `1` | Multiplier applied to all text sizes |
+| `LoadClosed` | `boolean` | `false` | Start with the GUI hidden (press the toggle key to reveal) — useful for serverhopper-style flows |
+| `AutoSave` | `boolean` | `true` | Master switch for persisting window state and enabling auto config load |
 
 **Returns:** A `Window` object.
 
@@ -40,7 +42,7 @@ Alias: `Window:CreateTab(Properties)`
 | `Size` | `UDim2` | `UDim2.new(0,50,0,50)` | Icon display size |
 | `LayoutOrder` | `number` | creation order | Tab ordering |
 
-Pages expose `Page.Left` / `Page.Right` ScrollingFrame columns (auto-sizing canvas, no visible scrollbar) and `Page["Page"]`, the non-scrolling overlay that hosts all popups so they are never clipped by column scrolling. The last open tab and collapsed sections are restored from `isettings.json` when `Save UI State` is enabled.
+Pages expose `Page.Left` / `Page.Right` ScrollingFrame columns (auto-sizing canvas, no visible scrollbar) and `Page["Page"]`, the non-scrolling overlay that hosts all popups so they are never clipped by column scrolling. Open popups close automatically on outside click, on column scroll, or when another popup opens; the window cannot be dragged while a popup is open. The last open tab and collapsed sections are restored from `isettings.json` when `Save UI State` is enabled.
 
 #### `Window:Fade(state: boolean)`
 Smoothly fades the entire UI in (`true`) or out (`false`). Open-page tab highlights are re-applied after fade-in.
@@ -209,17 +211,20 @@ Muted informational line. `Label:Set(text)` / `Label:Get()`. Not persisted.
 
 ## Built-in Settings Page
 
-### Configuration Section
+### Menu Section
 - **Toggle Keybind** — rebindable show/hide key (default `Insert`)
 - **UI Blur** — background blur while the GUI is shown
 - **Save UI State** — auto-save window position, last tab, collapsed sections to `Skeet/isettings.json` (default on)
-- **Selected Config / Refresh / Save / Load** — JSON configs under `Skeet/Configs/<GameId>/`
 - **Unload GUI** — destroys this window and all its connections
+
+### Configs Section
+- **Selected Config / Refresh Configs / Save Configuration / Load Configuration** — JSON configs under `Skeet/Configs/<GameId>/`
+- **Auto Load Config** — when enabled, the last selected config is applied automatically ~0.3s after the window is created (waits up to 3s for elements to register). Requires `Save UI State` on and a config selected at least once.
 
 ### Theme Section
 - **Accent Color**, **Background Color**, **Text Color** pickers
 - **GUI Outline** opacity slider
-- **Rainbow Accent** + **Rainbow Speed** (loop stops on unload)
+- **Rainbow Accent** + **Rainbow Speed** (loop stops on unload; disabling restores the pre-rainbow accent)
 - **Blur Strength** (0–50)
 
 ### Server Utilities Section

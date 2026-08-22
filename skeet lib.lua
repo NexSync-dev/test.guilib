@@ -241,6 +241,7 @@ function library:CreateWindow(Properties)
 		Blur = false,
 		BlurStrength = 24,
 		AutoSave = true,
+		LoadClosed = false,
 		FirstPageSet = false,
 		Unloaded = false,
 		SliderDispatcherReady = false,
@@ -618,6 +619,7 @@ function library:CreateWindow(Properties)
 	local StartPosition = UDim2.new()
 
 	utility:CreateConnection(Window, ScreenGui_MainFrame.InputBegan, function(Input)
+		if Window.OpenContent ~= nil then return end
 		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
 			Dragging = true
 			DragStart = Vector2.new(Input.Position.X, Input.Position.Y)
@@ -684,10 +686,63 @@ function library:CreateWindow(Properties)
 			ScreenGui_MainFrame.Position = UDim2.new(savedPos.XScale or 0.5, savedPos.XOffset or 0, savedPos.YScale or 0.5, savedPos.YOffset or 0)
 		end)
 	end
+	if utility:Resolve(Properties, {"loadclosed", "LoadClosed", "startclosed", "StartClosed"}, false) then
+		Window.LoadClosed = true
+	end
+	if Window.LoadClosed then
+		Window.Enabled = false
+		ScreenGui_MainFrame.Visible = false
+	end
+	local ConfigFolderName = library.Folder .. "/" .. library.Configs .. "/" .. tostring(game.GameId)
+	local function ApplyConfigByName(configName)
+		if not readfile then
+			return "load failed: no readfile"
+		end
+		if not configName or configName == "" then
+			return "load failed: no config selected"
+		end
+		local success, content = pcall(function()
+			return readfile(ConfigFolderName .. "/" .. configName .. ".json")
+		end)
+		if not success or type(content) ~= "string" then
+			return "load failed: missing file"
+		end
+		local decoded, data = pcall(function()
+			return HttpService:JSONDecode(content)
+		end)
+		if not decoded or typeof(data) ~= "table" then
+			return "load failed: malformed json"
+		end
+		local applied, skipped = 0, 0
+		for key, val in pairs(data) do
+			local info = WindowObj.Elements[key]
+			if info then
+				local ok = pcall(function()
+					if info.Type == "Colorpicker" then
+						if type(val) == "table" and #val >= 3
+							and type(val[1]) == "number" and type(val[2]) == "number" and type(val[3]) == "number" then
+							info.Element:Set(Color3.fromRGB(math.clamp(math.round(val[1]), 0, 255), math.clamp(math.round(val[2]), 0, 255), math.clamp(math.round(val[3]), 0, 255)))
+						else
+							skipped = skipped + 1
+							return
+						end
+					else
+						info.Element:Set(val)
+					end
+				end)
+				if ok then applied = applied + 1 else skipped = skipped + 1 end
+			end
+		end
+		if skipped > 0 then
+			return "loaded '" .. configName .. "' (" .. tostring(applied) .. ", " .. tostring(skipped) .. " skipped)"
+		else
+			return "loaded '" .. configName .. "' (" .. tostring(applied) .. ")"
+		end
+	end
 	if Window.ShowSettings then
 		local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999, IsSettings = true})
 		local menuSection = settings_page:CreateSection({Name = "Menu", Size = 155, Side = "Left"})
-		local configSection = settings_page:CreateSection({Name = "Configs", Size = 230, Side = "Left"})
+		local configSection = settings_page:CreateSection({Name = "Configs", Size = 260, Side = "Left"})
 
 		menuSection:CreateKeybind({
 			Name = "Toggle Keybind",
@@ -718,7 +773,6 @@ function library:CreateWindow(Properties)
 			end
 		})
 
-		local ConfigFolderName = library.Folder .. "/" .. library.Configs .. "/" .. tostring(game.GameId)
 		pcall(function()
 			if makefolder then
 				makefolder(library.Folder)
@@ -779,6 +833,11 @@ function library:CreateWindow(Properties)
 
 		local configStatus = nil
 		configStatus = configSection:CreateLabel({Text = "config: ready"})
+		Window.SetConfigStatus = function(text)
+			pcall(function()
+				configStatus:Set(text)
+			end)
+		end
 
 		configSection:CreateButton({
 			Name = "Refresh Configs",
@@ -833,48 +892,19 @@ function library:CreateWindow(Properties)
 			Callback = function()
 				local selectedIndex = configDropdown:Get()
 				local configName = configDropdown.Options[selectedIndex]
-				if not configName then
-					configStatus:Set("load failed: no config selected")
-					return
-				end
-				local success, content = pcall(function()
-					return readfile(ConfigFolderName .. "/" .. configName .. ".json")
-				end)
-				if not success or type(content) ~= "string" then
-					configStatus:Set("load failed: missing file")
-					return
-				end
-				local decoded, data = pcall(function()
-					return HttpService:JSONDecode(content)
-				end)
-				if not decoded or typeof(data) ~= "table" then
-					configStatus:Set("load failed: malformed json")
-					return
-				end
-				local applied, skipped = 0, 0
-				for key, val in pairs(data) do
-					local info = WindowObj.Elements[key]
-					if info then
-						local ok = pcall(function()
-							if info.Type == "Colorpicker" then
-								if type(val) == "table" and #val >= 3
-									and type(val[1]) == "number" and type(val[2]) == "number" and type(val[3]) == "number" then
-									info.Element:Set(Color3.fromRGB(math.clamp(math.round(val[1]), 0, 255), math.clamp(math.round(val[2]), 0, 255), math.clamp(math.round(val[3]), 0, 255)))
-								else
-									skipped = skipped + 1
-									return
-								end
-							else
-								info.Element:Set(val)
-							end
-						end)
-						if ok then applied = applied + 1 else skipped = skipped + 1 end
-					end
-				end
-				if skipped > 0 then
-					configStatus:Set("loaded '" .. configName .. "' (" .. tostring(applied) .. ", " .. tostring(skipped) .. " skipped)")
-				else
-					configStatus:Set("loaded '" .. configName .. "' (" .. tostring(applied) .. ")")
+				configStatus:Set(ApplyConfigByName(configName))
+			end
+		})
+
+		configSection:CreateToggle({
+			Name = "Auto Load Config",
+			State = WindowObj.SettingsData.autoLoadConfig == true,
+			Callback = function(state)
+				WindowObj.SettingsData.autoLoadConfig = state
+				if WindowObj.AutoSave then
+					pcall(function()
+						utility:SaveSettings(library.Folder, "isettings.json", WindowObj.SettingsData)
+					end)
 				end
 			end
 		})
@@ -887,7 +917,7 @@ function library:CreateWindow(Properties)
 		})
 
 		local themeSection = settings_page:CreateSection({Name = "Theme", Size = 330, Side = "Left"})
-		themeSection:CreateColorpicker({
+		local accentPicker = themeSection:CreateColorpicker({
 			Name = "Accent Color",
 			State = WindowObj.Accent,
 			Callback = function(color)
@@ -934,6 +964,7 @@ function library:CreateWindow(Properties)
 			Callback = function(state)
 				WindowObj.RainbowAccent = state
 				if state then
+					WindowObj.PreRainbowAccent = WindowObj.Accent
 					task.spawn(function()
 						local hue = 0
 						while WindowObj.RainbowAccent and not WindowObj.Unloaded do
@@ -942,6 +973,15 @@ function library:CreateWindow(Properties)
 							task.wait(WindowObj.RainbowSpeed or 0.05)
 						end
 					end)
+				else
+					local RestoreColor = WindowObj.PreRainbowAccent
+					if typeof(RestoreColor) == "Color3" then
+						WindowObj:SetAccent(RestoreColor)
+						pcall(function()
+							accentPicker:Set(RestoreColor, true)
+						end)
+						WindowObj.PreRainbowAccent = nil
+					end
 				end
 			end
 		})
@@ -1047,6 +1087,28 @@ function library:CreateWindow(Properties)
 			end
 		})
 	end
+
+	task.delay(0.3, function()
+		if WindowObj.Unloaded or not WindowObj.AutoSave then return end
+		if not WindowObj.SettingsData.autoLoadConfig then return end
+		local waited = 0
+		while WindowObj.Elements and next(WindowObj.Elements) == nil and waited < 3 and not WindowObj.Unloaded do
+			task.wait(0.25)
+			waited = waited + 0.25
+		end
+		if WindowObj.Unloaded or not WindowObj.Elements or next(WindowObj.Elements) == nil then return end
+		local configName = WindowObj.SettingsData.config
+		if type(configName) ~= "string" or configName == "" then
+			if WindowObj.SetConfigStatus then
+				WindowObj.SetConfigStatus("auto load: no config selected")
+			end
+			return
+		end
+		local status = ApplyConfigByName(configName)
+		if WindowObj.SetConfigStatus then
+			WindowObj.SetConfigStatus("auto " .. status)
+		end
+	end)
 
 	return WindowObj
 end
@@ -1243,6 +1305,16 @@ function library:CreatePage(Properties)
 		IconObject = Page_Tab_Image
 	})
 	Page.Window.Pages[#Page.Window.Pages + 1] = Page
+	utility:CreateConnection(Page.Window, Page_Page_Left:GetPropertyChangedSignal("CanvasPosition"), function()
+		if Page.Window.CloseOpenPopup then
+			Page.Window:CloseOpenPopup()
+		end
+	end)
+	utility:CreateConnection(Page.Window, Page_Page_Right:GetPropertyChangedSignal("CanvasPosition"), function()
+		if Page.Window.CloseOpenPopup then
+			Page.Window:CloseOpenPopup()
+		end
+	end)
 	return setmetatable(Page, pages)
 end
 
@@ -1872,6 +1944,21 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		Visible = false,
 		ZIndex = 100
 	})
+	local Popup_Catcher = utility:RenderObject(Window, "TextButton", {
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
+		BorderSizePixel = 0,
+		Parent = PageOverlay,
+		Position = UDim2.new(0, -20, 0, -20),
+		Size = UDim2.new(1, 40, 1, 40),
+		Text = "",
+		Visible = false,
+		ZIndex = 90
+	})
+	utility:CreateConnection(Window, Popup_Catcher.MouseButton1Click, function()
+		Content:Close()
+	end)
 	local Popup_Outline = utility:RenderObject(Window, "Frame", {
 		BackgroundColor3 = Color3.fromRGB(12, 12, 12),
 		BackgroundTransparency = 0,
@@ -2030,6 +2117,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		Window:CloseOpenPopup()
 		Window.OpenContent = Content
 		Popup_Holder.Size = UDim2.new(0, math.max(Content_Holder_Outline.AbsoluteSize.X, 40), 0, listHeight)
+		Popup_Catcher.Visible = true
 		Popup_Holder.Visible = true
 		TweenService:Create(Arrow_Image, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 180}):Play()
 		BuildRows()
@@ -2054,6 +2142,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	function Content:Close()
 		if not Popup_Holder.Visible then return end
 		Popup_Holder.Visible = false
+		Popup_Catcher.Visible = false
 		TweenService:Create(Arrow_Image, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 0}):Play()
 		if Window.OpenContent == Content then
 			Window.OpenContent = nil
@@ -2547,16 +2636,19 @@ function sections:CreateKeybind(Properties)
 		if typeof(Key) ~= "EnumItem" then
 			return false
 		end
-		local Success = pcall(function()
-			local _ = Enum[Key.EnumType][Key.Name]
+		local OkType, TypeName = pcall(function()
+			return (tostring(Key.EnumType):gsub("^Enum%.", ""))
 		end)
-		if not Success then
+		local OkName, KeyName = pcall(function()
+			return tostring(Key.Name)
+		end)
+		if not OkType or not OkName or not TypeName or not KeyName or TypeName == "" or KeyName == "" then
 			return false
 		end
-		Content.State = {Key.EnumType.Name, Key.Name}
-		Outline_Frame_Value.Text = "<b>" .. Shorten(Key.Name) .. "</b>"
+		Content.State = {TypeName, KeyName}
+		Outline_Frame_Value.Text = "<b>" .. Shorten(KeyName) .. "</b>"
 		if not Content.Holding then
-			Content.Callback({Key.EnumType.Name, Key.Name})
+			Content.Callback({TypeName, KeyName})
 		end
 		return true
 	end
@@ -2719,6 +2811,12 @@ function sections:CreateColorpicker(Properties)
 		ZIndex = 3
 	})
 
+	local function ColorToHex(Color)
+		return string.format("%02x%02x%02x",
+			math.round(math.clamp(Color.R, 0, 1) * 255),
+			math.round(math.clamp(Color.G, 0, 1) * 255),
+			math.round(math.clamp(Color.B, 0, 1) * 255))
+	end
 	local function ParseHex(RawHex)
 		local HexString = tostring(RawHex):gsub("#", ""):gsub("0x", "")
 		if #HexString == 6 and HexString:match("^%x+$") then
@@ -2745,7 +2843,7 @@ function sections:CreateColorpicker(Properties)
 		Parts.ValSatCursor.Position = UDim2.new(math.clamp(SatFraction * 0.94 + 0.03, 0.03, 0.97), 0, math.clamp((1 - ValFraction) * 0.96 + 0.02, 0.02, 0.98), 0)
 		Parts.HueCursor.Position = UDim2.new(0, 0, math.clamp(H, 0.02, 0.98), 0)
 		if HexBox then
-			HexBox.Text = "#" .. tostring(Color3.fromHSV(H, S, V):Hex()):upper()
+			HexBox.Text = "#" .. string.upper(ColorToHex(Color3.fromHSV(H, S, V)))
 		end
 		Content.State = Color3.fromHSV(H, S, V)
 	end
@@ -2778,6 +2876,22 @@ function sections:CreateColorpicker(Properties)
 			Visible = false,
 			ZIndex = 100
 		})
+		local Popup_Catcher = utility:RenderObject(Window, "TextButton", {
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			BackgroundTransparency = 1,
+			BorderColor3 = Color3.fromRGB(0, 0, 0),
+			BorderSizePixel = 0,
+			Parent = PageOverlay,
+			Position = UDim2.new(0, -20, 0, -20),
+			Size = UDim2.new(1, 40, 1, 40),
+			Text = "",
+			Visible = false,
+			ZIndex = 90
+		})
+		utility:CreateConnection(Window, Popup_Catcher.MouseButton1Click, function()
+			Content:Close()
+		end)
+		Content.Catcher = Popup_Catcher
 		local Popup_Outline = utility:RenderObject(Window, "Frame", {
 			BackgroundColor3 = Color3.fromRGB(12, 12, 12),
 			BackgroundTransparency = 0,
@@ -3052,12 +3166,18 @@ function sections:CreateColorpicker(Properties)
 		end
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
 		Popup_Holder.Position = UDim2.new(0, DesiredX - OverlayAbs.X, 0, DesiredY - OverlayAbs.Y)
+		if Content.Catcher then
+			Content.Catcher.Visible = true
+		end
 		ApplyHSV()
 	end
 
 	function Content:Close()
 		if not Popup_Holder or not Popup_Holder.Visible then return end
 		Popup_Holder.Visible = false
+		if Content.Catcher then
+			Content.Catcher.Visible = false
+		end
 		StopDrags()
 		if Window.OpenContent == Content then
 			Window.OpenContent = nil
@@ -3192,6 +3312,7 @@ function sections:CreateTextBox(Properties)
 		Name = utility:Resolve(Properties, {"name", "Name", "title", "Title"}, nil),
 		State = utility:Resolve(Properties, {"state", "State", "def", "Def", "default", "Default"}, ""),
 		Placeholder = utility:Resolve(Properties, {"placeholder", "Placeholder"}, ""),
+		Callback = utility:Resolve(Properties, {"callback", "Callback", "onchange", "OnChange"}, function() end),
 		Type = "TextBox",
 		Window = self.Window,
 		Page = self.Page,
@@ -3203,7 +3324,7 @@ function sections:CreateTextBox(Properties)
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
 		Parent = Content.Section.Holder,
-		Size = UDim2.new(1, 0, 0, (Content.Name and 24 or 13) + 5),
+		Size = UDim2.new(1, 0, 0, (Content.Name and 40 or 27)),
 		ZIndex = 3
 	})
 	local Content_Holder_Outline = utility:RenderObject(Window, "Frame", {
