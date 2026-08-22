@@ -1,4 +1,4 @@
-local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexSync-dev/test.guilib/refs/heads/main/skeet.lua"))()
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexSync-dev/test.guilib/refs/heads/main/skeet%20lib.lua"))()
 
 local window = library:CreateWindow({})
 
@@ -390,7 +390,6 @@ task.delay(0.5, buildModelViewer)
 utilitySection:CreateButton({
 	Name = "Toggle Preview",
 	Callback = function()
-		previewWindow.Enabled = not previewWindow.Enabled
-		previewWindow:Fade(previewWindow.Enabled)
+		previewWindow:SetEnabled(not previewWindow.Enabled)
 	end
 })

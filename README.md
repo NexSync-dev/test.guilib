@@ -5,15 +5,11 @@ A production-grade Roblox UI library with a skeet/gamesense-inspired visual styl
 ## Quick Start
 
 ```lua
-local library = loadstring(game:HttpGet("YOUR_RAW_URL_HERE"))()
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexSync-dev/test.guilib/refs/heads/main/skeet%20lib.lua"))()
 local window = library:CreateWindow({})
 ```
 
-Every window automatically includes a **Settings** page (last tab icon) with:
-- Toggle Keybind (rebindable)
-- Save / Load Configuration (JSON to filesystem)
-- Accent Color picker (live theme updates)
-- Server Utilities (Copy Job ID, Join Job ID, Server Hop, Hop High/Low)
+Every window automatically includes a **Settings** page (last tab icon) with config save/load, theme controls, and server utilities.
 
 ---
 
@@ -21,11 +17,13 @@ Every window automatically includes a **Settings** page (last tab icon) with:
 
 ### `library:CreateWindow(Properties) -> Window`
 
-Creates a new draggable GUI window.
-
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| *(none)* | — | — | Currently accepts an empty table. |
+| `Name` | `string` | `"skeet"` | Internal GUI name |
+| `Size` | `Vector2` | `(660, 560)` | Window size in pixels |
+| `Key` | `Enum.KeyCode` | `Enum.KeyCode.Insert` | Show/hide toggle key |
+| `ShowSettings` | `boolean` | `true` | Append the built-in Settings page |
+| `TextScale` | `number` | `1` | Multiplier applied to all text sizes |
 
 **Returns:** A `Window` object.
 
@@ -36,44 +34,49 @@ Creates a new draggable GUI window.
 #### `Window:CreatePage(Properties) -> Page`
 Alias: `Window:CreateTab(Properties)`
 
-Creates a new tab page in the sidebar.
-
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `Icon` | `string` | — | rbxassetid:// URL for the tab icon |
 | `Size` | `UDim2` | `UDim2.new(0,50,0,50)` | Icon display size |
+| `LayoutOrder` | `number` | creation order | Tab ordering |
+
+Pages expose `Page.Left` / `Page.Right` ScrollingFrame columns (auto-sizing canvas, no visible scrollbar) and `Page["Page"]`, the non-scrolling overlay that hosts all popups so they are never clipped by column scrolling. The last open tab and collapsed sections are restored from `isettings.json` when `Save UI State` is enabled.
 
 #### `Window:Fade(state: boolean)`
-Smoothly fades the entire UI in (true) or out (false).
+Smoothly fades the entire UI in (`true`) or out (`false`). Open-page tab highlights are re-applied after fade-in.
+
+#### `Window:SetEnabled(state: boolean)`
+Show/hide helper used by the toggle key: toggles visibility, closes any open popup, releases focused text boxes, and fades.
 
 #### `Window:Unload()`
-Destroys all GUI instances and disconnects all event connections owned by **this window only**. Full cleanup, zero leaks. Multiple windows are fully independent: unloading one never affects another.
+Destroys all GUI instances and disconnects all event connections owned by **this window only**. Multiple windows are fully independent: unloading one never affects another.
 
 #### `Window:SetAccent(color: Color3)`
-Globally updates the accent color on all active toggles, sliders, and dropdown highlights.
+Live-updates every accent element: active toggles, slider fills, tab accent bars, section accents, top bar, and bound keybind values.
+
+#### `Window:SetTheme({Background = ..., Text = ...})`
+Partial theme update. Background derives three shades (base/light/dark) applied across chrome and sections; text recolor applies to labels whose color matches the previous text color.
 
 #### `Window:SetToggleKey(key: Enum.KeyCode)`
 Sets the show/hide toggle key programmatically (default: `Enum.KeyCode.Insert`).
 
 #### `Window:AddInstance(instance: Instance)`
-Registers an externally-built GUI instance (e.g. a custom window you constructed yourself) so it is destroyed on `Unload` and included in `Fade`. Returns the instance. This lets you attach a fully custom GUI to the window's lifecycle.
+Registers an externally-built GUI instance so it is included in `Fade` and destroyed on `Unload`. Returns the instance.
 
 #### `Window:RegisterConnection(connection: RBXScriptConnection)`
 Registers an external event connection that `Unload` will disconnect. Returns the connection.
 
 ---
 
-### Multiple Windows
+## Multiple Windows
 
-Each call to `library:CreateWindow` produces an independent, fully functional window (own GUI instances, connections, accent, settings). Build a second window — or an entirely custom GUI attached via `AddInstance`/`RegisterConnection` — alongside the first without interference.
+Each call to `library:CreateWindow` produces an independent window (own instances, connections, accent, settings). A shared blur effect is reference-counted across windows and removed only when the last one unloads.
 
 ---
 
-### Page Methods
+## Page Methods
 
-#### `Page:CreateSection(Properties) -> Section`
-
-Creates a groupbox section within a page.
+### `Page:CreateSection(Properties) -> Section`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -81,17 +84,15 @@ Creates a groupbox section within a page.
 | `Size` | `number` | `150` | Height in pixels |
 | `Side` | `string` | `"Left"` | `"Left"` or `"Right"` column |
 
-> **Note:** Each page's `Left`/`Right` columns are vertical `ScrollingFrame`s. When the
-> stacked sections (and any custom GUI you parent into `Page.Left`/`Page.Right`) exceed the
-> column height they scroll instead of overflowing the window — so oversized `Size` values
-> on a section no longer spill outside the GUI. The old per-section scroll arrows were removed;
-> scroll with the mouse wheel (or drag the scrollbar) instead.
+Sections collapse via the chevron button with an animated tween; collapsed state persists per-section in `isettings.json`. Section content scrolls internally when elements exceed `Size`.
 
 ---
 
-### Section Methods (Elements)
+## Section Methods (Elements)
 
-#### `Section:CreateToggle(Properties) -> Toggle`
+All creators accept flexible property casing (`Name`/`name`, `State`/`state`, etc.). Every element returns an object with `:Get()` / `:Set(value, silent)` — pass `silent = true` to change state without firing the callback.
+
+### `Section:CreateToggle(Properties) -> Toggle`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -99,162 +100,158 @@ Creates a groupbox section within a page.
 | `State` | `boolean` | `false` | Initial state |
 | `Callback` | `function(value)` | — | Called on state change |
 
-**Methods:** `Toggle:Set(bool)`, `Toggle:Get() -> bool`
-
 ---
 
-#### `Section:CreateSlider(Properties) -> Slider`
+### `Section:CreateSlider(Properties) -> Slider`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Name` | `string` | `nil` | Display label (optional) |
+| `Name` | `string` | `nil` | Display label (optional; compact row if omitted) |
 | `State` | `number` | `Min` | Initial value |
-| `Min` | `number` | `0` | Minimum value |
-| `Max` | `number` | `100` | Maximum value |
-| `Step` | `number` | `1` | Quantization step (e.g. `0.5` allows halves). Aliases: `Decimals`, `Tick`. |
-| `Suffix` | `string` | `""` | Display suffix (e.g. "px", "%") |
+| `Min` / `Max` | `number` | `0` / `100` | Range (swapped automatically if inverted) |
+| `Step` | `number` | `1` | Quantization step (e.g. `0.5`). Aliases: `Decimals`, `Tick` |
+| `Suffix` / `Ending` | `string` | `""` | Display suffix (e.g. `"px"`, `"%"`) |
 | `Callback` | `function(value)` | — | Called on value change |
 
-**Methods:** `Slider:Set(number)`, `Slider:Get() -> number`
+The value bubble rides the track fill; dragging uses global mouse-move dispatch per window (no per-slider connections).
 
 ---
 
-#### `Section:CreateDropdown(Properties) -> Dropdown`
+### `Section:CreateDropdown(Properties) -> Dropdown`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `Name` | `string` | `"New Dropdown"` | Display label |
 | `State` | `number` | `1` | Selected index |
-| `Options` | `table` | `{1, 2, 3}` | Array of option strings |
+| `Options` | `table` | `{}` | Array of option strings |
 | `Callback` | `function(index)` | — | Called with selected index |
 
-**Methods:** `Dropdown:Set(index)`, `Dropdown:Get() -> number`
+**Methods:** `Set(index, silent?)`, `Get() -> number`, `RefreshOptions(options)` (rebuilds list), `Open()`, `Close()`, `IsOpen()`. The popup lists up to 7 rows before scrolling.
 
 ---
 
-#### `Section:CreateMultibox(Properties) -> Multibox`
+### `Section:CreateMultibox(Properties) -> Multibox`
 
-Multi-select dropdown.
+Multi-select dropdown with checkbox rows.
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Name` | `string` | `"New Dropdown"` | Display label |
-| `State` | `table` | `{1}` | Array of selected indices |
-| `Options` | `table` | `{1, 2, 3}` | Array of option strings |
-| `Min` | `number` | `0` | Minimum selections allowed |
-| `Max` | `number` | `1000` | Maximum selections allowed |
-| `Callback` | `function(indices)` | — | Called with selected indices |
+| `Name` | `string` | `"New Multibox"` | Display label |
+| `State` | `table` | `{}` | Selected indices (names accepted too) |
+| `Options` | `table` | `{}` | Array of option strings |
+| `Max` | `number` | unlimited | Maximum selections |
+| `Min` | `number` | `0` | Minimum selections (padded from the first option) |
+| `Callback` | `function(indices)` | — | Called with selected index array |
 
-**Methods:** `Multibox:Set(table)`, `Multibox:Get() -> table`
+`Get()` returns the sorted index array; the display shows comma-joined names or `-`.
 
 ---
 
-#### `Section:CreateKeybind(Properties) -> Keybind`
+### `Section:CreateKeybind(Properties) -> Keybind`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Name` | `string` | `"New Toggle"` | Display label |
-| `State` | `table\|nil` | `nil` | `{"KeyCode", "Z"}` or `{"UserInputType", "MouseButton2"}` |
-| `Mode` | `string` | `"Hold"` | `"Hold"` or `"Toggle"` |
-| `Callback` | `function(value)` | — | Called on keybind change |
+| `Name` | `string` | `"New Keybind"` | Display label |
+| `State` | `table` | `{"KeyCode", "Insert"}` | `{"KeyCode", "F"}` or `{"UserInputType", "MouseButton2"}` |
+| `Mode` | `string` | `"Always"` | `"Always"`, `"Hold"`, or `"Toggle"` |
+| `Callback` | `function(value)` | — | See below |
 
-**Methods:** `Keybind:Set(table?)`, `Keybind:Get() -> table`
-**Properties:** `Keybind.Active` (boolean, is the key actively held/toggled)
+Callback values: rebinding/clearing fires `{type, value}`-style arrays (`{"KeyCode", "F"}`); while in `Hold`/`Toggle` mode, pressing/releasing additionally fires a plain `true`/`false`. `Get()` returns `{type, value, active}`.
 
-Left-click the keybind display to rebind. Right-click to clear.
+Left-click the keybind display to rebind; right-click the row to clear. Invalid states fall back safely instead of erroring on `Enum[...]` lookups.
 
 ---
 
-#### `Section:CreateColorpicker(Properties) -> Colorpicker`
+### `Section:CreateColorpicker(Properties) -> Colorpicker`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Name` | `string` | `"New Toggle"` | Display label |
-| `State` | `Color3` | `Color3.fromRGB(255,255,255)` | Initial color |
+| `Name` | `string` | `"New Colorpicker"` | Display label |
+| `State` | `Color3` | white | Initial color |
 | `Callback` | `function(color)` | — | Called on color change |
 
-**Methods:** `Colorpicker:Set(Color3)`, `Colorpicker:Get() -> Color3`
+Popup contains a saturation/value field, hue strip, and a hex input (`#RRGGBB`, applied on Enter). Cursors are clamped inside their tracks; drag handlers are registered once per picker.
 
 ---
 
-#### `Section:CreateButton(Properties) -> Button`
+### `Section:CreateButton(Properties) -> Button`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Name` | `string` | `"Button"` | Button label |
-| `Callback` | `function()` | — | Called on click |
+| `Name` | `string` | `"New Button"` | Button label |
+| `Callback` | `function(button)` | — | Called on click |
+
+Full-width button with pressed-state darkening. `Button:SetText(text)` / `Button:Get()`.
+
+Buttons are **not** persisted in configs.
 
 ---
 
-#### `Section:CreateTextBox(Properties) -> TextBox`
+### `Section:CreateTextBox(Properties) -> TextBox`
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `Name` | `string` | `"Text Box"` | Display label |
+| `Name` | `string` | `nil` | Display label (optional) |
 | `State` | `string` | `""` | Initial text |
-| `Callback` | `function(text)` | — | Called on focus lost |
+| `Placeholder` | `string` | `""` | Placeholder text |
+| `MaxLength` | `number` | unlimited | Hard character cap enforced live |
+| `Callback` | `function(text, enterPressed)` | — | Called on focus lost |
 
-**Methods:** `TextBox:Set(string)`, `TextBox:Get() -> string`
+Text boxes are **not** persisted in configs.
+
+---
+
+### `Section:CreateLabel(Properties) -> Label`
+
+Muted informational line. `Label:Set(text)` / `Label:Get()`. Not persisted.
 
 ---
 
 ## Built-in Settings Page
 
-Every `CreateWindow` call automatically appends a Settings page with:
-
 ### Configuration Section
-- **Toggle Keybind** — Click to rebind the show/hide key (default: `Insert`)
-- **Save UI State** — Toggle auto-saving of window position, last tab and collapsed sections to `Skeet/isettings.json` (default: on). Disable if you don't want the window to remember its layout.
-- **Save Configuration** — Serializes all named elements to `Skeet/Configs/<GameId>/<name>.json`
-- **Load Configuration** — Deserializes and applies saved values to all named elements
-- **Unload GUI** — Calls `Window:Unload()`, destroying this window and all its connections
+- **Toggle Keybind** — rebindable show/hide key (default `Insert`)
+- **UI Blur** — background blur while the GUI is shown
+- **Save UI State** — auto-save window position, last tab, collapsed sections to `Skeet/isettings.json` (default on)
+- **Selected Config / Refresh / Save / Load** — JSON configs under `Skeet/Configs/<GameId>/`
+- **Unload GUI** — destroys this window and all its connections
 
 ### Theme Section
-- **Accent Color** — Color picker that live-updates all accent-colored elements
-- **Background Color / Text Color** — Live theme recolors
-- **GUI Outline** — Outline opacity slider
-- **Rainbow Accent** — Cycles the accent color
-- **Rainbow Speed** — How fast the rainbow accent cycles (0.01s–0.5s per step)
-- **Blur Strength** — Background blur amount (0–50) applied while the GUI is shown
+- **Accent Color**, **Background Color**, **Text Color** pickers
+- **GUI Outline** opacity slider
+- **Rainbow Accent** + **Rainbow Speed** (loop stops on unload)
+- **Blur Strength** (0–50)
 
 ### Server Utilities Section
-- **Copy Job ID** — Copies current `game.JobId` to clipboard
-- **Target Job ID** — Text input for a target server's job ID
-- **Join via Job ID** — Teleports to the specified job ID
-- **Server Hop** — Random hop to another server
-- **Hop to Highest Population** — Joins the fullest available server
-- **Hop to Lowest Population** — Joins the emptiest available server
+- **Copy Job ID**, **Target Job ID** + **Join via Job ID**
+- **Server Hop** (random), **Hop to Highest/Lowest Population** with status feedback
 
 ---
 
 ## Configuration Engine
 
-Configs are stored as JSON files via the executor's `writefile`/`readfile` APIs.
+Configs are stored as JSON via the executor's `writefile`/`readfile` APIs (silently skipped if unavailable).
 
 **Paths:**
-- Configs: `Skeet/Configs/<GameId>/<name>.json` (one file per saved config, named via the "Config Name" box)
-- Window state (last position + selected config + collapsed sections + last tab): `Skeet/isettings.json`
+- Configs: `Skeet/Configs/<GameId>/<name>.json`
+- Window state: `Skeet/isettings.json` (position, last tab, collapsed sections, last config)
 
-All named elements are automatically included. Color values are stored as `[R, G, B]` arrays with values in the 0-1 range. **`Button` and `TextBox` elements are NOT persisted** — only Toggle, Slider, Dropdown, Multibox, Keybind, and Colorpicker save/load. Element names must be unique per window; a duplicate `Name` silently overwrites the previous element's config entry.
-
----
-
-## Dragging
-
-The window is draggable from anywhere on the main frame body. Dragging uses `UserInputService` delta tracking and works on both mouse and touch inputs.
+Only elements with a unique `Name` persist: **Toggle, Slider, Dropdown, Multibox, Keybind, Colorpicker**. Colors store as `[R, G, B]` floats (0–1); keybinds as `["KeyCode", "F"]` arrays. Duplicate names silently overwrite each other's entry.
 
 ---
 
-## Toggle Key
+## Dragging & Toggle Key
 
-Press the toggle key (default: **Insert**) to show/hide the UI with a smooth fade animation. The key can be rebound from the Settings page or set programmatically via `window:SetToggleKey(Enum.KeyCode.F9)`.
+Drag the window from anywhere on its body (mouse + touch); position saves on release. Press the toggle key (default **Insert**) to fade the UI; the key is rebindable from Settings or via `window:SetToggleKey(...)`.
 
 ---
 
 ## Complete Example
 
+See [example.lua](example.lua) for a full walkthrough exercising every element type, plus a second independent window using `AddInstance`/`RegisterConnection`.
+
 ```lua
-local library = loadstring(game:HttpGet("YOUR_RAW_URL"))()
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/NexSync-dev/test.guilib/refs/heads/main/skeet%20lib.lua"))()
 local window = library:CreateWindow({})
 
 local page = window:CreatePage({Icon = "rbxassetid://8547236654"})
@@ -280,19 +277,13 @@ section:CreateDropdown({
     Options = {"Option A", "Option B", "Option C"},
     Callback = function(v) print("Dropdown:", v) end
 })
-
-section:CreateButton({
-    Name = "Click Me",
-    Callback = function() print("Clicked!") end
-})
 ```
 
 ---
 
 ## Architecture Notes
 
-- **Zero Memory Leaks:** `Window:Unload()` destroys all instances and disconnects all connections. Popup close functions (`Dropdown`, `Multibox`, `Colorpicker`) remove their temporary instances from `library.Renders` and disconnect their local connections from `library.Connections`.
-- **Destroy Ordering:** Child instances are destroyed before their parents to avoid double-destroy errors.
-- **Fade Safety:** The `Fade` function snapshots the render table and wraps tween calls in `pcall` to handle instances that may have been destroyed mid-iteration.
-- **Slider Decoupling:** Slider hit calculation uses `AbsolutePosition` deltas relative to the container bounds rather than hardcoded pixel offsets.
-- **Optimized Serialisation:** `utility:Serialise` uses indexed table accumulation and a single `table.concat` call instead of repeated string concatenation.
+- **Central registries:** `library.Renders` (weak-keyed instance records) and `library.Connections` (weak-keyed connection→window map) drive fade, theme sweeps, and leak-free `Unload`.
+- **Per-window dispatch:** sliders and keybinds share one global InputBegan/InputEnded dispatcher per window instead of per-element connections; popups close through `Window.OpenContent` so only one is ever open.
+- **Popup layering:** dropdown/multibox/colorpicker popups are parented to `Page["Page"]` (non-scrolling overlay, high ZIndex) and positioned/clamped against its bounds — never clipped by column scrolling.
+- **Fade safety:** fade iterates the render table guarded by `Inst.Parent ~= nil`; destroyed instances are pruned by `PruneElementList` during accent/theme updates.
