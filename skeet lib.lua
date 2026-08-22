@@ -242,6 +242,7 @@ function library:CreateWindow(Properties)
 		BlurStrength = 24,
 		AutoSave = true,
 		LoadClosed = false,
+		PopupsFollowScroll = false,
 		FirstPageSet = false,
 		Unloaded = false,
 		SliderDispatcherReady = false,
@@ -741,7 +742,7 @@ function library:CreateWindow(Properties)
 	end
 	if Window.ShowSettings then
 		local settings_page = WindowObj:CreatePage({Icon = "rbxassetid://8547256547", LayoutOrder = 9999, IsSettings = true})
-		local menuSection = settings_page:CreateSection({Name = "Menu", Size = 155, Side = "Left"})
+		local menuSection = settings_page:CreateSection({Name = "Menu", Size = 180, Side = "Left"})
 		local configSection = settings_page:CreateSection({Name = "Configs", Size = 260, Side = "Left"})
 
 		menuSection:CreateKeybind({
@@ -770,6 +771,20 @@ function library:CreateWindow(Properties)
 				Window.AutoSave = state
 				Window.SettingsData.saveUIState = state
 				utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
+			end
+		})
+
+		menuSection:CreateToggle({
+			Name = "Popups Follow Scroll",
+			State = Window.SettingsData.popupFollowScroll == true,
+			Callback = function(state)
+				Window.PopupsFollowScroll = state
+				Window.SettingsData.popupFollowScroll = state
+				if Window.AutoSave then
+					pcall(function()
+						utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
+					end)
+				end
 			end
 		})
 
@@ -1246,6 +1261,12 @@ function library:CreatePage(Properties)
 		Page_Page.Visible = state
 		Page:ApplyVisuals()
 		if not state then
+			if Page.Window.CloseOpenPopup and Page.Window.OpenContent then
+				local OpenPopup = Page.Window.OpenContent
+				if OpenPopup and OpenPopup.Page == Page then
+					Page.Window:CloseOpenPopup()
+				end
+			end
 			for _, section in ipairs(Page.Sections) do
 				if section and section.Content and section.Content.Open then
 					section:CloseContent()
@@ -1305,16 +1326,18 @@ function library:CreatePage(Properties)
 		IconObject = Page_Tab_Image
 	})
 	Page.Window.Pages[#Page.Window.Pages + 1] = Page
-	utility:CreateConnection(Page.Window, Page_Page_Left:GetPropertyChangedSignal("CanvasPosition"), function()
-		if Page.Window.CloseOpenPopup then
+	local function HandleColumnScroll()
+		local OpenPopup = Page.Window.OpenContent
+		if Page.Window.PopupsFollowScroll and OpenPopup and OpenPopup.Reposition then
+			pcall(function()
+				OpenPopup:Reposition()
+			end)
+		elseif Page.Window.CloseOpenPopup and not Page.Window.PopupsFollowScroll then
 			Page.Window:CloseOpenPopup()
 		end
-	end)
-	utility:CreateConnection(Page.Window, Page_Page_Right:GetPropertyChangedSignal("CanvasPosition"), function()
-		if Page.Window.CloseOpenPopup then
-			Page.Window:CloseOpenPopup()
-		end
-	end)
+	end
+	utility:CreateConnection(Page.Window, Page_Page_Left:GetPropertyChangedSignal("CanvasPosition"), HandleColumnScroll)
+	utility:CreateConnection(Page.Window, Page_Page_Right:GetPropertyChangedSignal("CanvasPosition"), HandleColumnScroll)
 	return setmetatable(Page, pages)
 end
 
@@ -1602,6 +1625,13 @@ function pages:CreateSection(Properties)
 	end)
 
 	utility:CreateConnection(Section.Window, Holder_Frame_ContentHolder:GetPropertyChangedSignal("CanvasPosition"), function()
+		local OpenPopup = Section.Window.OpenContent
+		if Section.Window.PopupsFollowScroll and OpenPopup and OpenPopup.Reposition then
+			pcall(function()
+				OpenPopup:Reposition()
+			end)
+			return
+		end
 		if Section.Content and Section.Content.Open then
 			local Closing = Section.Content
 			Section.Content = {}
@@ -1700,6 +1730,7 @@ function sections:CreateToggle(Properties)
 	end)
 
 	utility:CreateConnection(Window, Content_Holder_Button.MouseEnter, function()
+		if Window.OpenContent ~= nil then return end
 		Outline_Frame_Gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(180, 180, 180))
 	end)
 
@@ -1899,6 +1930,7 @@ function sections:CreateSlider(Properties)
 	end)
 
 	utility:CreateConnection(Window, Content_Holder_Button.MouseEnter, function()
+		if Window.OpenContent ~= nil then return end
 		if not Content.Holding then
 			Outline_Frame_Gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(215, 215, 215))
 			Frame_Slider_Gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(215, 215, 215))
@@ -1930,9 +1962,11 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	if not PageOverlay then return end
 
 	local MaxVisible = 7
-	local RowHeight = 18
+	local RowHeight = 20
+	local RowSpacing = 2
+	local PopupPadding = 4
 	local optionCount = math.max(#Content.Options, 1)
-	local listHeight = math.min(optionCount, MaxVisible) * RowHeight + 4
+	local listHeight = math.min(optionCount, MaxVisible) * RowHeight + math.max(math.min(optionCount, MaxVisible) - 1, 0) * RowSpacing + PopupPadding * 2
 
 	local Popup_Holder = utility:RenderObject(Window, "Frame", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -2016,12 +2050,17 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		ZIndex = 103
 	})
 	local Popup_ListLayout = utility:RenderObject(Window, "UIListLayout", {
-		Padding = UDim.new(0, 0),
+		Padding = UDim.new(0, RowSpacing),
 		Parent = Popup_ScrollingFrame,
 		FillDirection = Enum.FillDirection.Vertical,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Left,
 		VerticalAlignment = Enum.VerticalAlignment.Top
+	})
+	local Popup_ScrollPadding = utility:RenderObject(Window, "UIPadding", {
+		PaddingTop = UDim.new(0, PopupPadding),
+		PaddingBottom = UDim.new(0, PopupPadding),
+		Parent = Popup_ScrollingFrame
 	})
 
 	local RowButtons = {}
@@ -2126,6 +2165,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 				end
 			end)
 			utility:CreateConnection(Window, RowButton.MouseEnter, function()
+				if Window.OpenContent ~= nil and Window.OpenContent ~= Content then return end
 				RowButton.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
 			end)
 			utility:CreateConnection(Window, RowButton.MouseLeave, function()
@@ -2134,15 +2174,8 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		end
 	end
 
-	function Content:Open()
-		if Window.OpenContent == Content then return end
-		Window:CloseOpenPopup()
-		Window.OpenContent = Content
-		Popup_Holder.Size = UDim2.new(0, math.max(Content_Holder_Outline.AbsoluteSize.X, 40), 0, listHeight)
-		Popup_Catcher.Visible = true
-		Popup_Holder.Visible = true
-		TweenService:Create(Arrow_Image, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 180}):Play()
-		BuildRows()
+	function Content:Reposition()
+		if not Popup_Holder.Visible then return end
 		local OverlayAbs = PageOverlay.AbsolutePosition
 		local OverlaySize = PageOverlay.AbsoluteSize
 		local Width = Popup_Holder.AbsoluteSize.X
@@ -2159,6 +2192,18 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		end
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
 		Popup_Holder.Position = UDim2.new(0, DesiredX - OverlayAbs.X, 0, DesiredY - OverlayAbs.Y)
+	end
+
+	function Content:Open()
+		if Window.OpenContent == Content then return end
+		Window:CloseOpenPopup()
+		Window.OpenContent = Content
+		Popup_Holder.Size = UDim2.new(0, math.max(Content_Holder_Outline.AbsoluteSize.X, 40), 0, listHeight)
+		Popup_Catcher.Visible = true
+		Popup_Holder.Visible = true
+		TweenService:Create(Arrow_Image, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = 180}):Play()
+		BuildRows()
+		Content:Reposition()
 	end
 
 	function Content:Close()
@@ -2192,7 +2237,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	function Content:RefreshOptions(Options)
 		Content.Options = type(Options) == "table" and Options or {}
 		optionCount = math.max(#Content.Options, 1)
-		listHeight = math.min(optionCount, MaxVisible) * RowHeight + 4
+		listHeight = math.min(optionCount, MaxVisible) * RowHeight + math.max(math.min(optionCount, MaxVisible) - 1, 0) * RowSpacing + PopupPadding * 2
 		Popup_Holder.Size = UDim2.new(0, Content_Holder_Outline.AbsoluteSize.X, 0, listHeight)
 		if Multi then
 			Content:Set({}, true)
@@ -2872,6 +2917,7 @@ function sections:CreateColorpicker(Properties)
 			HexBox.Text = "#" .. string.upper(ColorToHex(Color3.fromHSV(H, S, V)))
 		end
 		Content.State = Color3.fromHSV(H, S, V)
+		Content_HSV = {H, S, V}
 	end
 
 	local function StartValSatDrag()
@@ -2883,8 +2929,15 @@ function sections:CreateColorpicker(Properties)
 	end
 
 	local function StopDrags()
+		local WasDragging = Parts.DraggingValSat or Parts.DraggingHue
 		Parts.DraggingValSat = false
 		Parts.DraggingHue = false
+		if WasDragging and PopupBuilt then
+			Content_HSV = {Parts.H, Parts.S, Parts.V}
+			pcall(function()
+				Content.Callback(Content.State)
+			end)
+		end
 	end
 
 	local function BuildPopup()
@@ -3192,15 +3245,8 @@ function sections:CreateColorpicker(Properties)
 		return Content.State
 	end
 
-	function Content:Open()
-		if Window.OpenContent == Content then return end
-		Window:CloseOpenPopup()
-		Window.OpenContent = Content
-		BuildPopup()
-		Parts.H, Parts.S, Parts.V = Content_HSV[1], Content_HSV[2], Content_HSV[3]
-		Parts.DraggingValSat = false
-		Parts.DraggingHue = false
-		Popup_Holder.Visible = true
+	function Content:Reposition()
+		if not Popup_Holder or not Popup_Holder.Visible then return end
 		local OverlayAbs = Content.Page.Page.AbsolutePosition
 		local OverlaySize = Content.Page.Page.AbsoluteSize
 		local Width = Popup_Holder.AbsoluteSize.X
@@ -3217,6 +3263,18 @@ function sections:CreateColorpicker(Properties)
 		end
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
 		Popup_Holder.Position = UDim2.new(0, DesiredX - OverlayAbs.X, 0, DesiredY - OverlayAbs.Y)
+	end
+
+	function Content:Open()
+		if Window.OpenContent == Content then return end
+		Window:CloseOpenPopup()
+		Window.OpenContent = Content
+		BuildPopup()
+		Parts.H, Parts.S, Parts.V = Content_HSV[1], Content_HSV[2], Content_HSV[3]
+		Parts.DraggingValSat = false
+		Parts.DraggingHue = false
+		Popup_Holder.Visible = true
+		Content:Reposition()
 		if Content.Catcher then
 			Content.Catcher.Visible = true
 		end
@@ -3328,6 +3386,7 @@ function sections:CreateButton(Properties)
 		Content.Callback(Content)
 	end)
 	utility:CreateConnection(Window, Content_Holder_Button.MouseEnter, function()
+		if Window.OpenContent ~= nil then return end
 		Outline_Frame_Gradient.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(180, 180, 180))
 	end)
 	utility:CreateConnection(Window, Content_Holder_Button.MouseLeave, function()

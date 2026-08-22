@@ -215,6 +215,7 @@ Muted informational line. `Label:Set(text)` / `Label:Get()`. Not persisted.
 - **Toggle Keybind** — rebindable show/hide key (default `Insert`)
 - **UI Blur** — background blur while the GUI is shown
 - **Save UI State** — auto-save window position, last tab, collapsed sections to `Skeet/isettings.json` (default on)
+- **Popups Follow Scroll** — when on, open dropdown/colorpicker popups reposition while you scroll instead of closing (default off = close on scroll)
 - **Unload GUI** — destroys this window and all its connections
 
 ### Configs Section
