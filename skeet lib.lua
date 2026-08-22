@@ -382,9 +382,13 @@ function library:CreateWindow(Properties)
 		Size = UDim2.new(1, -1, 1, 0)
 	})
 	local InnerBorder_InnerFrame_Folder = utility:RenderObject(Window, "Frame", {
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
+		BorderColor3 = Color3.fromRGB(0, 0, 0),
 		BorderSizePixel = 0,
-		Parent = Pages_InnerBorder_InnerFrame
+		Parent = Pages_InnerBorder_InnerFrame,
+		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(1, 0, 1, 0)
 	})
 	local InnerBorder_InnerFrame_Pattern = utility:RenderObject(Window, "ImageLabel", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
