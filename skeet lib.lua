@@ -1961,9 +1961,9 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	local PageOverlay = Content.Page and Content.Page.Page
 	if not PageOverlay then return end
 
-	local MaxVisible = 7
-	local RowHeight = 20
-	local RowSpacing = 2
+	local MaxVisible = 8
+	local RowHeight = 22
+	local RowSpacing = 3
 	local PopupPadding = 4
 	local optionCount = math.max(#Content.Options, 1)
 	local listHeight = math.min(optionCount, MaxVisible) * RowHeight + math.max(math.min(optionCount, MaxVisible) - 1, 0) * RowSpacing + PopupPadding * 2
@@ -2060,6 +2060,8 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	local Popup_ScrollPadding = utility:RenderObject(Window, "UIPadding", {
 		PaddingTop = UDim.new(0, PopupPadding),
 		PaddingBottom = UDim.new(0, PopupPadding),
+		PaddingLeft = UDim.new(0, 4),
+		PaddingRight = UDim.new(0, 4),
 		Parent = Popup_ScrollingFrame
 	})
 
@@ -2178,18 +2180,27 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		if not Popup_Holder.Visible then return end
 		local OverlayAbs = PageOverlay.AbsolutePosition
 		local OverlaySize = PageOverlay.AbsoluteSize
+		local AnchorPos = Content_Holder_Outline.AbsolutePosition
+		local AnchorSize = Content_Holder_Outline.AbsoluteSize
+		local AnchorTop = AnchorPos.Y
+		local AnchorBottom = AnchorTop + AnchorSize.Y
+		if AnchorBottom < OverlayAbs.Y or AnchorTop > OverlayAbs.Y + OverlaySize.Y then
+			Content:Close()
+			return
+		end
 		local Width = Popup_Holder.AbsoluteSize.X
 		local Height = Popup_Holder.AbsoluteSize.Y
-		local DesiredX = Content_Holder_Outline.AbsolutePosition.X
-		local DesiredY = Content_Holder_Outline.AbsolutePosition.Y + Content_Holder_Outline.AbsoluteSize.Y + 2
-		if DesiredY + Height > OverlayAbs.Y + OverlaySize.Y then
-			local FlippedY = Content_Holder_Outline.AbsolutePosition.Y - Height - 2
-			if FlippedY >= OverlayAbs.Y then
-				DesiredY = FlippedY
-			else
-				DesiredY = math.clamp(DesiredY, OverlayAbs.Y, math.max(OverlayAbs.Y, OverlayAbs.Y + OverlaySize.Y - Height))
-			end
+		local DesiredY
+		local BelowY = AnchorBottom + 2
+		local AboveY = AnchorTop - Height - 2
+		if BelowY + Height <= OverlayAbs.Y + OverlaySize.Y then
+			DesiredY = BelowY
+		elseif AboveY >= OverlayAbs.Y then
+			DesiredY = AboveY
+		else
+			DesiredY = math.clamp(AnchorTop, OverlayAbs.Y, math.max(OverlayAbs.Y, OverlayAbs.Y + OverlaySize.Y - Height))
 		end
+		local DesiredX = AnchorPos.X
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
 		Popup_Holder.Position = UDim2.new(0, DesiredX - OverlayAbs.X, 0, DesiredY - OverlayAbs.Y)
 	end
@@ -3175,6 +3186,9 @@ function sections:CreateColorpicker(Properties)
 			Parts.S = FX
 			Parts.V = 1 - FY
 			ApplyHSV()
+			pcall(function()
+				Content.Callback(Content.State)
+			end)
 		end
 
 		local function HandleHue(Input)
@@ -3184,6 +3198,9 @@ function sections:CreateColorpicker(Properties)
 			local FY = math.clamp((Input.Position.Y - AbsPos.Y) / AbsSize.Y, 0, 1)
 			Parts.H = FY
 			ApplyHSV()
+			pcall(function()
+				Content.Callback(Content.State)
+			end)
 		end
 
 		utility:CreateConnection(Window, ValSat_Base.InputBegan, function(Input)
@@ -3249,18 +3266,27 @@ function sections:CreateColorpicker(Properties)
 		if not Popup_Holder or not Popup_Holder.Visible then return end
 		local OverlayAbs = Content.Page.Page.AbsolutePosition
 		local OverlaySize = Content.Page.Page.AbsoluteSize
+		local AnchorPos = Content_Holder_Outline.AbsolutePosition
+		local AnchorSize = Content_Holder_Outline.AbsoluteSize
+		local AnchorTop = AnchorPos.Y
+		local AnchorBottom = AnchorTop + AnchorSize.Y
+		if AnchorBottom < OverlayAbs.Y or AnchorTop > OverlayAbs.Y + OverlaySize.Y then
+			Content:Close()
+			return
+		end
 		local Width = Popup_Holder.AbsoluteSize.X
 		local Height = Popup_Holder.AbsoluteSize.Y
-		local DesiredX = Content_Holder_Outline.AbsolutePosition.X - Width + Content_Holder_Outline.AbsoluteSize.X
-		local DesiredY = Content_Holder_Outline.AbsolutePosition.Y + Content_Holder_Outline.AbsoluteSize.Y + 2
-		if DesiredY + Height > OverlayAbs.Y + OverlaySize.Y then
-			local FlippedY = Content_Holder_Outline.AbsolutePosition.Y - Height - 2
-			if FlippedY >= OverlayAbs.Y then
-				DesiredY = FlippedY
-			else
-				DesiredY = math.clamp(DesiredY, OverlayAbs.Y, math.max(OverlayAbs.Y, OverlayAbs.Y + OverlaySize.Y - Height))
-			end
+		local DesiredY
+		local BelowY = AnchorBottom + 2
+		local AboveY = AnchorTop - Height - 2
+		if BelowY + Height <= OverlayAbs.Y + OverlaySize.Y then
+			DesiredY = BelowY
+		elseif AboveY >= OverlayAbs.Y then
+			DesiredY = AboveY
+		else
+			DesiredY = math.clamp(AnchorTop, OverlayAbs.Y, math.max(OverlayAbs.Y, OverlayAbs.Y + OverlaySize.Y - Height))
 		end
+		local DesiredX = AnchorPos.X - Width + AnchorSize.X
 		DesiredX = math.clamp(DesiredX, OverlayAbs.X, math.max(OverlayAbs.X, OverlayAbs.X + OverlaySize.X - Width))
 		Popup_Holder.Position = UDim2.new(0, DesiredX - OverlayAbs.X, 0, DesiredY - OverlayAbs.Y)
 	end
