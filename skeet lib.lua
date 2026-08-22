@@ -1941,9 +1941,11 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		BorderSizePixel = 0,
 		Parent = PageOverlay,
 		Size = UDim2.new(0, Content_Holder_Outline.AbsoluteSize.X, 0, listHeight),
+		Active = true,
 		Visible = false,
 		ZIndex = 100
 	})
+	Popup_Holder.Active = true
 	local Popup_Catcher = utility:RenderObject(Window, "TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -1957,6 +1959,26 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		ZIndex = 90
 	})
 	utility:CreateConnection(Window, Popup_Catcher.MouseButton1Click, function()
+		if Content._PressInside then
+			Content._PressInside = nil
+			return
+		end
+		Content:Close()
+	end)
+	utility:CreateConnection(Window, UserInputService.InputBegan, function(Input)
+		if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if not Content:IsOpen() then return end
+		Content._PressInside = nil
+		local Point = Vector2.new(Input.Position.X, Input.Position.Y)
+		local AP, AS = Popup_Holder.AbsolutePosition, Popup_Holder.AbsoluteSize
+		if Point.X >= AP.X and Point.X <= AP.X + AS.X and Point.Y >= AP.Y and Point.Y <= AP.Y + AS.Y then
+			Content._PressInside = true
+			return
+		end
+		local OP, OS = Content_Holder_Outline.AbsolutePosition, Content_Holder_Outline.AbsoluteSize
+		if Point.X >= OP.X and Point.X <= OP.X + OS.X and Point.Y >= OP.Y and Point.Y <= OP.Y + OS.Y then
+			return
+		end
 		Content:Close()
 	end)
 	local Popup_Outline = utility:RenderObject(Window, "Frame", {
@@ -2151,6 +2173,10 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 
 	function Content:IsOpen()
 		return Popup_Holder.Visible
+	end
+
+	function Content:GetPopupHolder()
+		return Popup_Holder
 	end
 
 	function Content:Refresh()
@@ -2873,9 +2899,11 @@ function sections:CreateColorpicker(Properties)
 			BorderSizePixel = 0,
 			Parent = PageOverlay,
 			Size = UDim2.new(0, 192, 0, 192),
+			Active = true,
 			Visible = false,
 			ZIndex = 100
 		})
+		Popup_Holder.Active = true
 		local Popup_Catcher = utility:RenderObject(Window, "TextButton", {
 			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 			BackgroundTransparency = 1,
@@ -2889,9 +2917,32 @@ function sections:CreateColorpicker(Properties)
 			ZIndex = 90
 		})
 		utility:CreateConnection(Window, Popup_Catcher.MouseButton1Click, function()
+			if Content._PressInside then
+				Content._PressInside = nil
+				return
+			end
 			Content:Close()
 		end)
 		Content.Catcher = Popup_Catcher
+		if not Content.GeometryCloseBound then
+			Content.GeometryCloseBound = true
+			utility:CreateConnection(Window, UserInputService.InputBegan, function(Input)
+				if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then return end
+				if not Content:IsOpen() then return end
+				Content._PressInside = nil
+				local Point = Vector2.new(Input.Position.X, Input.Position.Y)
+				local AP, AS = Popup_Holder.AbsolutePosition, Popup_Holder.AbsoluteSize
+				if Point.X >= AP.X and Point.X <= AP.X + AS.X and Point.Y >= AP.Y and Point.Y <= AP.Y + AS.Y then
+					Content._PressInside = true
+					return
+				end
+				local OP, OS = Content_Holder_Outline.AbsolutePosition, Content_Holder_Outline.AbsoluteSize
+				if Point.X >= OP.X and Point.X <= OP.X + OS.X and Point.Y >= OP.Y and Point.Y <= OP.Y + OS.Y then
+					return
+				end
+				Content:Close()
+			end)
+		end
 		local Popup_Outline = utility:RenderObject(Window, "Frame", {
 			BackgroundColor3 = Color3.fromRGB(12, 12, 12),
 			BackgroundTransparency = 0,
@@ -3186,6 +3237,10 @@ function sections:CreateColorpicker(Properties)
 
 	function Content:IsOpen()
 		return Popup_Holder ~= nil and Popup_Holder.Visible
+	end
+
+	function Content:GetPopupHolder()
+		return Popup_Holder
 	end
 
 	utility:CreateConnection(Window, Content_Holder_Button.MouseButton1Click, function()
