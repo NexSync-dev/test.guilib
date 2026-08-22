@@ -42,7 +42,7 @@ Alias: `Window:CreateTab(Properties)`
 | `Size` | `UDim2` | `UDim2.new(0,50,0,50)` | Icon display size |
 | `LayoutOrder` | `number` | creation order | Tab ordering |
 
-Pages expose `Page.Left` / `Page.Right` ScrollingFrame columns (auto-sizing canvas, no visible scrollbar) and `Page["Page"]`, the non-scrolling overlay that hosts all popups so they are never clipped by column scrolling. Open popups close automatically on outside click, on column scroll, or when another popup opens; the window cannot be dragged while a popup is open. The last open tab and collapsed sections are restored from `isettings.json` when `Save UI State` is enabled.
+Pages expose `Page.Left` / `Page.Right` ScrollingFrame columns (auto-sizing canvas, no visible scrollbar) and `Page["Page"]`, the non-scrolling overlay that hosts all popups so they are never clipped by column scrolling. Open popups close automatically on outside click, on column scroll (or follow it when **Popups Follow Scroll** is on), or when another popup opens; the window cannot be dragged while a popup is open. The last open tab, collapsed sections, theme colors, blur settings and toggle key are restored from `Skeet/isettings_<GameId>.json` when `Save UI State` is enabled.
 
 #### `Window:Fade(state: boolean)`
 Smoothly fades the entire UI in (`true`) or out (`false`). Open-page tab highlights are re-applied after fade-in.
@@ -86,7 +86,7 @@ Each call to `library:CreateWindow` produces an independent window (own instance
 | `Size` | `number` | `150` | Height in pixels |
 | `Side` | `string` | `"Left"` | `"Left"` or `"Right"` column |
 
-Sections collapse via the chevron button with an animated tween; collapsed state persists per-section in `isettings.json`. Section content scrolls internally when elements exceed `Size`.
+Sections collapse via the chevron button with an animated tween; collapsed state persists per-section in `isettings_<GameId>.json`. Section content scrolls internally when elements exceed `Size`.
 
 ---
 
@@ -214,7 +214,7 @@ Muted informational line. `Label:Set(text)` / `Label:Get()`. Not persisted.
 ### Menu Section
 - **Toggle Keybind** — rebindable show/hide key (default `Insert`)
 - **UI Blur** — background blur while the GUI is shown
-- **Save UI State** — auto-save window position, last tab, collapsed sections to `Skeet/isettings.json` (default on)
+- **Save UI State** — auto-save window position, last tab, collapsed sections, theme, blur and keybind to `Skeet/isettings_<GameId>.json` (default on; per game)
 - **Popups Follow Scroll** — when on, open dropdown/colorpicker popups reposition while you scroll instead of closing (default off = close on scroll)
 - **Unload GUI** — destroys this window and all its connections
 
@@ -240,7 +240,7 @@ Configs are stored as JSON via the executor's `writefile`/`readfile` APIs (silen
 
 **Paths:**
 - Configs: `Skeet/Configs/<GameId>/<name>.json`
-- Window state: `Skeet/isettings.json` (position, last tab, collapsed sections, last config)
+- Window state: `Skeet/isettings_<GameId>.json` (position, last tab, collapsed sections, theme, blur, toggle key, last config)
 
 Only elements with a unique `Name` persist: **Toggle, Slider, Dropdown, Multibox, Keybind, Colorpicker**. Colors store as `[R, G, B]` floats (0–1); keybinds as `["KeyCode", "F"]` arrays. Duplicate names silently overwrite each other's entry.
 

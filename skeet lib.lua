@@ -7,6 +7,7 @@ local Lighting = game:GetService("Lighting")
 local library = {
 	Folder = "Skeet",
 	Configs = "Configs",
+	ISettingsFile = "isettings_" .. tostring(game.GameId) .. ".json",
 	CurrentWindow = nil,
 	Windows = {},
 	Renders = setmetatable({}, {__mode = "k"}),
@@ -650,7 +651,7 @@ function library:CreateWindow(Properties)
 				YScale = ScreenGui_MainFrame.Position.Y.Scale,
 				YOffset = math.floor(ScreenGui_MainFrame.Position.Y.Offset)
 			}
-			utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
+			utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
 		end
 	end)
 
@@ -677,7 +678,7 @@ function library:CreateWindow(Properties)
 	table.insert(Window.ThemeElements, {Type = "Background", Object = Pages_InnerBorder_InnerFrame, Shade = "Base"})
 	table.insert(Window.AccentElements, {Type = "Border", Object = TopAccentBar})
 
-	Window.SettingsData = utility:GetSettings(library.Folder, "isettings.json")
+	Window.SettingsData = utility:GetSettings(library.Folder, library.ISettingsFile)
 	if Window.SettingsData.saveUIState == false then
 		Window.AutoSave = false
 	end
@@ -745,22 +746,42 @@ function library:CreateWindow(Properties)
 		local menuSection = settings_page:CreateSection({Name = "Menu", Size = 180, Side = "Left"})
 		local configSection = settings_page:CreateSection({Name = "Configs", Size = 260, Side = "Left"})
 
-		menuSection:CreateKeybind({
+		local settingsSavePending = false
+		local function QueueSaveSettings()
+			if not Window.AutoSave or settingsSavePending then return end
+			settingsSavePending = true
+			task.delay(0.4, function()
+				settingsSavePending = false
+				if Window.Unloaded or not Window.AutoSave then return end
+				pcall(function()
+					utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
+				end)
+			end)
+		end
+
+		local toggleKeyElement = nil
+		toggleKeyElement = menuSection:CreateKeybind({
 			Name = "Toggle Keybind",
 			State = {"KeyCode", "Insert"},
 			Callback = function(val)
 				if type(val) == "table" and val[1] == "KeyCode" and Enum.KeyCode[val[2]] then
 					WindowObj.Key = Enum.KeyCode[val[2]]
+					if type(val[2]) == "string" then
+						Window.SettingsData.toggleKey = val[2]
+						QueueSaveSettings()
+					end
 				end
 			end
 		})
 
 		menuSection:CreateToggle({
 			Name = "UI Blur",
-			State = false,
+			State = Window.SettingsData.uiBlur == true,
 			Callback = function(state)
 				WindowObj.Blur = state
 				blurEffect.Size = (state and WindowObj.Enabled) and (WindowObj.BlurStrength or 24) or 0
+				Window.SettingsData.uiBlur = state
+				QueueSaveSettings()
 			end
 		})
 
@@ -770,7 +791,7 @@ function library:CreateWindow(Properties)
 			Callback = function(state)
 				Window.AutoSave = state
 				Window.SettingsData.saveUIState = state
-				utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
+				utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
 			end
 		})
 
@@ -780,11 +801,7 @@ function library:CreateWindow(Properties)
 			Callback = function(state)
 				Window.PopupsFollowScroll = state
 				Window.SettingsData.popupFollowScroll = state
-				if Window.AutoSave then
-					pcall(function()
-						utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
-					end)
-				end
+				QueueSaveSettings()
 			end
 		})
 
@@ -825,7 +842,7 @@ function library:CreateWindow(Properties)
 					local chosen = configDropdown.Options[index]
 					if chosen then
 						Window.SettingsData.config = chosen
-						utility:SaveSettings(library.Folder, "isettings.json", Window.SettingsData)
+						utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
 					end
 				end
 			end
@@ -918,7 +935,7 @@ function library:CreateWindow(Properties)
 				WindowObj.SettingsData.autoLoadConfig = state
 				if WindowObj.AutoSave then
 					pcall(function()
-						utility:SaveSettings(library.Folder, "isettings.json", WindowObj.SettingsData)
+						utility:SaveSettings(library.Folder, library.ISettingsFile, WindowObj.SettingsData)
 					end)
 				end
 			end
@@ -932,11 +949,17 @@ function library:CreateWindow(Properties)
 		})
 
 		local themeSection = settings_page:CreateSection({Name = "Theme", Size = 330, Side = "Left"})
+		local function SaveColor(Key, Color)
+			Window.SettingsData[Key] = {math.round(math.clamp(Color.R, 0, 1) * 255), math.round(math.clamp(Color.G, 0, 1) * 255), math.round(math.clamp(Color.B, 0, 1) * 255)}
+			QueueSaveSettings()
+		end
+
 		local accentPicker = themeSection:CreateColorpicker({
 			Name = "Accent Color",
 			State = WindowObj.Accent,
 			Callback = function(color)
 				WindowObj:SetAccent(color)
+				SaveColor("accentColor", color)
 			end
 		})
 		themeSection:CreateColorpicker({
@@ -944,6 +967,7 @@ function library:CreateWindow(Properties)
 			State = WindowObj.Theme.Background,
 			Callback = function(color)
 				WindowObj:SetTheme({Background = color})
+				SaveColor("backgroundColor", color)
 			end
 		})
 		themeSection:CreateColorpicker({
@@ -951,15 +975,18 @@ function library:CreateWindow(Properties)
 			State = WindowObj.Theme.Text,
 			Callback = function(color)
 				WindowObj:SetTheme({Text = color})
+				SaveColor("textColor", color)
 			end
 		})
 		themeSection:CreateSlider({
 			Name = "GUI Outline",
 			Min = 0,
 			Max = 100,
-			State = 100,
+			State = Window.SettingsData.outlineOpacity or 100,
 			Callback = function(value)
 				ScreenGui_MainFrame.BackgroundTransparency = 1 - (value / 100)
+				Window.SettingsData.outlineOpacity = value
+				QueueSaveSettings()
 			end
 		})
 		themeSection:CreateSlider({
@@ -967,10 +994,12 @@ function library:CreateWindow(Properties)
 			Min = 0.01,
 			Max = 0.5,
 			Step = 0.01,
-			State = 0.05,
+			State = Window.SettingsData.rainbowSpeed or 0.05,
 			Suffix = "s",
 			Callback = function(value)
 				WindowObj.RainbowSpeed = value
+				Window.SettingsData.rainbowSpeed = value
+				QueueSaveSettings()
 			end
 		})
 		themeSection:CreateToggle({
@@ -1004,14 +1033,61 @@ function library:CreateWindow(Properties)
 			Name = "Blur Strength",
 			Min = 0,
 			Max = 50,
-			State = 24,
+			State = Window.SettingsData.blurStrength or 24,
 			Callback = function(value)
 				WindowObj.BlurStrength = value
 				if WindowObj.Blur and WindowObj.Enabled then
 					blurEffect.Size = value
 				end
+				Window.SettingsData.blurStrength = value
+				QueueSaveSettings()
 			end
 		})
+
+		do
+			local SD = Window.SettingsData
+			pcall(function()
+				Window.PopupsFollowScroll = SD.popupFollowScroll == true
+			end)
+			pcall(function()
+				if type(SD.toggleKey) == "string" and Enum.KeyCode[SD.toggleKey] then
+					WindowObj.Key = Enum.KeyCode[SD.toggleKey]
+					toggleKeyElement:Set({"KeyCode", SD.toggleKey}, true)
+				end
+			end)
+			pcall(function()
+				if type(SD.accentColor) == "table" and #SD.accentColor >= 3
+					and type(SD.accentColor[1]) == "number" and type(SD.accentColor[2]) == "number" and type(SD.accentColor[3]) == "number" then
+					local Restored = Color3.fromRGB(
+						math.clamp(math.round(SD.accentColor[1]), 0, 255),
+						math.clamp(math.round(SD.accentColor[2]), 0, 255),
+						math.clamp(math.round(SD.accentColor[3]), 0, 255))
+					WindowObj:SetAccent(Restored)
+					accentPicker:Set(Restored, true)
+				end
+			end)
+			pcall(function()
+				if type(SD.backgroundColor) == "table" and #SD.backgroundColor >= 3 then
+					WindowObj:SetTheme({Background = Color3.fromRGB(
+						math.clamp(math.round(SD.backgroundColor[1]), 0, 255),
+						math.clamp(math.round(SD.backgroundColor[2]), 0, 255),
+						math.clamp(math.round(SD.backgroundColor[3]), 0, 255))})
+				end
+			end)
+			pcall(function()
+				if type(SD.textColor) == "table" and #SD.textColor >= 3 then
+					WindowObj:SetTheme({Text = Color3.fromRGB(
+						math.clamp(math.round(SD.textColor[1]), 0, 255),
+						math.clamp(math.round(SD.textColor[2]), 0, 255),
+						math.clamp(math.round(SD.textColor[3]), 0, 255))})
+				end
+			end)
+			pcall(function()
+				if WindowObj.Enabled and WindowObj.Blur then
+					blurEffect.Size = WindowObj.BlurStrength or 24
+				end
+			end)
+		end
 
 		local serverSection = settings_page:CreateSection({Name = "Server Utilities", Size = 240, Side = "Right"})
 
@@ -1276,7 +1352,7 @@ function library:CreatePage(Properties)
 		if state then
 			if Page.UserIndex and Page.Window.SettingsData and Page.Window.AutoSave then
 				Page.Window.SettingsData.lastTab = Page.UserIndex
-				utility:SaveSettings(library.Folder, "isettings.json", Page.Window.SettingsData)
+				utility:SaveSettings(library.Folder, library.ISettingsFile, Page.Window.SettingsData)
 			end
 			Page.Window:SetPage(Page)
 		end
@@ -1605,7 +1681,7 @@ function pages:CreateSection(Properties)
 		if Section.Window.SettingsData and Section.Window.AutoSave then
 			Section.Window.SettingsData.sections = Section.Window.SettingsData.sections or {}
 			Section.Window.SettingsData.sections[Section.Name] = Section.Collapsed
-			utility:SaveSettings(library.Folder, "isettings.json", Section.Window.SettingsData)
+			utility:SaveSettings(library.Folder, library.ISettingsFile, Section.Window.SettingsData)
 		end
 	end)
 
