@@ -74,10 +74,10 @@ local extraSection = page:CreateSection({
 })
 
 extraSection:CreateTextBox({
-	Name = "Config Name",
-	Placeholder = "name...",
+	Name = "Config Tag",
+	Placeholder = "tag...",
 	Callback = function(text)
-		print("[example] config name:", text)
+		print("[example] config tag:", text)
 	end
 })
 

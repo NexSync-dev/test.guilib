@@ -3,6 +3,7 @@ local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
+local GuiService = game:GetService("GuiService")
 
 local library = {
 	Folder = "Skeet",
@@ -24,7 +25,7 @@ function library.UpdateBlurSize()
 		end
 	end
 	pcall(function()
-		local BlurEffect = game:GetService("Lighting"):FindFirstChild("_SkeetLibBlur")
+		local BlurEffect = Lighting:FindFirstChild("_SkeetLibBlur")
 		if BlurEffect then
 			BlurEffect.Size = Target
 		end
@@ -92,9 +93,7 @@ end
 
 function utility:DisconnectConnection(Connection)
 	if Connection == nil then return end
-	if library.Connections[Connection] ~= nil then
-		library.Connections[Connection] = nil
-	end
+	library.Connections[Connection] = nil
 	if typeof(Connection) == "RBXScriptConnection" then
 		Connection:Disconnect()
 	end
@@ -164,33 +163,6 @@ function utility:AddTitle(Window, Parent, Position, Size, Text, TextColor, ZInde
 	return utility:AddLabel(Window, Parent, Position, Size, Text, TextColor, 0, ZIndex, TextSize)
 end
 
-function utility:Serialise(Table)
-	local Serialised = {}
-	local Count = 0
-	for _, Value in ipairs(Table) do
-		Count = Count + 1
-		Serialised[Count] = tostring(Value)
-	end
-	return table.concat(Serialised, ", ")
-end
-
-function utility:Sort(Table1, Table2)
-	local Result = {}
-	local Lookup = {}
-	for _, Val in ipairs(Table1) do
-		local ActualVal = (typeof(Val) == "number") and Table2[Val] or Val
-		if ActualVal ~= nil then
-			Lookup[ActualVal] = true
-		end
-	end
-	for _, Val in ipairs(Table2) do
-		if Lookup[Val] then
-			Result[#Result + 1] = Val
-		end
-	end
-	return Result
-end
-
 function utility:GetSettings(Folder, File)
 	local Path = Folder .. "/" .. File
 	if not readfile then return {} end
@@ -250,7 +222,6 @@ function library:CreateWindow(Properties)
 		Elements = {},
 		AccentElements = {},
 		ThemeElements = {},
-		Sliders = {},
 		Keybinds = {},
 		OpenContent = nil,
 		HoldingSlider = nil,
@@ -441,7 +412,10 @@ function library:CreateWindow(Properties)
 			end
 		end
 		if LiveWindows <= 1 then
-			TweenService:Create(blurEffect, Info, {Size = (state and Window.Blur and Window.BlurStrength or 0)}):Play()
+			local ActiveBlur = (blurEffect.Parent ~= nil) and blurEffect or nil
+			if ActiveBlur then
+				TweenService:Create(ActiveBlur, Info, {Size = (state and Window.Blur and Window.BlurStrength or 0)}):Play()
+			end
 		else
 			task.defer(function()
 				library.UpdateBlurSize()
@@ -486,7 +460,7 @@ function library:CreateWindow(Properties)
 		Window.RainbowAccent = false
 		Window.Enabled = false
 		pcall(function()
-			if Window.SettingsData and Window.AutoSave and utility.SaveSettings and writefile then
+			if Window.SettingsData and Window.AutoSave and writefile then
 				utility:SaveSettings(library.Folder, library.ISettingsFile, Window.SettingsData)
 			end
 		end)
@@ -578,7 +552,7 @@ function library:CreateWindow(Properties)
 		Window.Enabled = state
 		ScreenGui_MainFrame.Visible = state
 		if not state then
-			game:GetService("GuiService").SelectedObject = nil
+			GuiService.SelectedObject = nil
 			pcall(function()
 				local Focused = UserInputService:GetFocusedTextBox()
 				if Focused then Focused:ReleaseFocus() end
@@ -1143,18 +1117,23 @@ function library:CreateWindow(Properties)
 			Placeholder = "job id"
 		})
 
+		local hopStatus = serverSection:CreateLabel({Text = "hop: idle"})
+
 		serverSection:CreateButton({
 			Name = "Join via Job ID",
 			Callback = function()
 				local target = jobIdBox:Get()
 				if target and target ~= "" then
 					SaveSettingsNow()
-					game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, target, game:GetService("Players").LocalPlayer)
+					local Ok, Err = pcall(function()
+						game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, target, game:GetService("Players").LocalPlayer)
+					end)
+					if not Ok then
+						hopStatus:Set("join failed: " .. tostring(Err):match(":%d+: (.+)$"))
+					end
 				end
 			end
 		})
-
-		local hopStatus = serverSection:CreateLabel({Text = "hop: idle"})
 
 		local function HopServer(sortMode)
 			local TeleportService = game:GetService("TeleportService")
@@ -1172,26 +1151,33 @@ function library:CreateWindow(Properties)
 			end
 			local candidateServers = {}
 			for _, server in ipairs(servers.data) do
-				if server.id ~= JobId and server.playing < server.maxPlayers and server.playing > 0 then
-					table.insert(candidateServers, server)
+				local Playing, MaxPlayers = tonumber(server.playing), tonumber(server.maxPlayers)
+				if type(server.id) == "string" and Playing and MaxPlayers
+					and server.id ~= JobId and Playing < MaxPlayers and Playing > 0 then
+					table.insert(candidateServers, {id = server.id, playing = Playing, maxPlayers = MaxPlayers})
 				end
 			end
 			if #candidateServers == 0 then
 				hopStatus:Set("hop failed: no servers")
 				return
 			end
+			local Target
 			if sortMode == "Highest" then
 				table.sort(candidateServers, function(a, b) return a.playing > b.playing end)
+				Target = candidateServers[1]
 			elseif sortMode == "Lowest" then
 				table.sort(candidateServers, function(a, b) return a.playing < b.playing end)
+				Target = candidateServers[1]
 			else
-				local index = math.random(1, #candidateServers)
-				hopStatus:Set("hop: teleporting (" .. tostring(candidateServers[index].playing) .. "/" .. tostring(candidateServers[index].maxPlayers) .. ")")
-				TeleportService:TeleportToPlaceInstance(PlaceId, candidateServers[index].id, Players.LocalPlayer)
-				return
+				Target = candidateServers[math.random(1, #candidateServers)]
 			end
-			hopStatus:Set("hop: teleporting (" .. tostring(candidateServers[1].playing) .. "/" .. tostring(candidateServers[1].maxPlayers) .. ")")
-			TeleportService:TeleportToPlaceInstance(PlaceId, candidateServers[1].id, Players.LocalPlayer)
+			hopStatus:Set("hop: teleporting (" .. tostring(Target.playing) .. "/" .. tostring(Target.maxPlayers) .. ")")
+			local Ok, Err = pcall(function()
+				TeleportService:TeleportToPlaceInstance(PlaceId, Target.id, Players.LocalPlayer)
+			end)
+			if not Ok then
+				hopStatus:Set("hop failed: " .. tostring(Err):match(":%d+: (.+)$"))
+			end
 		end
 
 		serverSection:CreateButton({
@@ -1225,17 +1211,17 @@ function library:CreateWindow(Properties)
 			waited = waited + 0.25
 		end
 		if WindowObj.Unloaded or not WindowObj.Elements or next(WindowObj.Elements) == nil then return end
-	local configName = WindowObj.SettingsData.config
-	if type(configName) ~= "string" or configName == "" then
-		if WindowObj.SetConfigStatus then
-			WindowObj.SetConfigStatus("auto load: no config selected")
+		local configName = WindowObj.SettingsData.config
+		if type(configName) ~= "string" or configName == "" then
+			if WindowObj.SetConfigStatus then
+				WindowObj.SetConfigStatus("auto load: no config selected")
+			end
+			return
 		end
-		return
-	end
-	local status = ApplyConfigByName(configName)
-	if WindowObj.SetConfigStatus then
-		WindowObj.SetConfigStatus("auto " .. status)
-	end
+		local status = ApplyConfigByName(configName)
+		if WindowObj.SetConfigStatus then
+			WindowObj.SetConfigStatus("auto " .. status)
+		end
 	end)
 
 	task.defer(function()
@@ -1254,7 +1240,7 @@ function library:CreatePage(Properties)
 		Open = false,
 		Window = self,
 		Sections = {},
-		IsSettings = (Properties.IsSettings or false)
+		IsSettings = utility:Resolve(Properties, {"issettings", "IsSettings"}, false)
 	}
 	local Page_Tab = utility:RenderObject(Page.Window, "Frame", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
@@ -1419,7 +1405,7 @@ function library:CreatePage(Properties)
 		end
 	end)
 
-	if not Properties.IsSettings then
+	if not Page.IsSettings then
 		Page.Window.UserPageCount = (Page.Window.UserPageCount or 0) + 1
 		Page.UserIndex = Page.Window.UserPageCount
 		if not Page.Window.FirstPageSet then
@@ -1441,8 +1427,7 @@ function library:CreatePage(Properties)
 	table.insert(Page.Window.AccentElements, {
 		Type = "Page",
 		Element = Page,
-		Object = Page_Tab_Border,
-		IconObject = Page_Tab_Image
+		Object = Page_Tab_Border
 	})
 	Page.Window.Pages[#Page.Window.Pages + 1] = Page
 	local function HandleColumnScroll()
@@ -1665,11 +1650,6 @@ function pages:CreateSection(Properties)
 		Element = Section,
 		Object = Section_AccentBar
 	})
-	table.insert(Section.Window.AccentElements, {
-		Type = "Label",
-		Element = Section,
-		Object = Section_Holder_Title
-	})
 	table.insert(Section.Window.ThemeElements, {Type = "Background", Object = Section_Holder, Shade = "Light"})
 	table.insert(Section.Window.ThemeElements, {Type = "Background", Object = Section_Holder_Frame, Shade = "Base"})
 	Section.Holder = Holder_Frame_ContentHolder
@@ -1858,9 +1838,7 @@ function sections:CreateToggle(Properties)
 	end)
 
 	Content:Set(Content.State, true)
-	if Content.Name then
-		self.Window.Elements[Content.Name] = {Element = Content, Type = "Toggle"}
-	end
+	self.Window.Elements[Content.Name] = {Element = Content, Type = "Toggle"}
 	table.insert(self.Window.AccentElements, {
 		Type = "Toggle",
 		Element = Content,
@@ -2002,19 +1980,25 @@ function sections:CreateSlider(Properties)
 		TextXAlignment = Enum.TextXAlignment.Center
 	})
 
+	local VisualsApplied = false
 	function Content:Set(state, silent)
-		Content.State = math.clamp(math.round((tonumber(state) or Content.Min) / Content.Step) * Content.Step, Content.Min, Content.Max)
-		local range = Content.Max - Content.Min
-		local fraction
-		if range > 0 then
-			fraction = (Content.State - Content.Min) / range
-		else
-			fraction = 1
+		local NewState = math.clamp(math.round((tonumber(state) or Content.Min) / Content.Step) * Content.Step, Content.Min, Content.Max)
+		local Changed = NewState ~= Content.State or not VisualsApplied
+		VisualsApplied = true
+		Content.State = NewState
+		if Changed then
+			local range = Content.Max - Content.Min
+			local fraction
+			if range > 0 then
+				fraction = (Content.State - Content.Min) / range
+			else
+				fraction = 1
+			end
+			fraction = math.clamp(fraction, 0, 1)
+			Frame_Slider_Title.Text = "<b>" .. tostring(Content.State) .. Content.Ending .. "</b>"
+			Frame_Slider_Title.Position = UDim2.new(fraction, 0, 0.5, 0)
+			Outline_Frame_Slider.Size = UDim2.new(fraction, 0, 1, 0)
 		end
-		fraction = math.clamp(fraction, 0, 1)
-		Frame_Slider_Title.Text = "<b>" .. tostring(Content.State) .. Content.Ending .. "</b>"
-		Frame_Slider_Title.Position = UDim2.new(fraction, 0, 0.5, 0)
-		Outline_Frame_Slider.Size = UDim2.new(fraction, 0, 1, 0)
 		if not silent then
 			Content.Callback(Content:Get())
 		end
@@ -2072,7 +2056,6 @@ function sections:CreateSlider(Properties)
 		Element = Content,
 		Object = Outline_Frame_Slider
 	})
-	table.insert(Window.Sliders, Content)
 	return Content
 end
 local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, Arrow_Image, Multi)
@@ -2098,7 +2081,6 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		Visible = false,
 		ZIndex = 100
 	})
-	Popup_Holder.Active = true
 	local Popup_Catcher = utility:RenderObject(Window, "TextButton", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -2261,7 +2243,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 					if CurrentIndex then
 						table.remove(Content.State, CurrentIndex)
 					else
-						if #Content.State >= (Content.Maximum or math.huge) then
+						if #Content.State >= Content.Maximum then
 							table.remove(Content.State, 1)
 						end
 						table.insert(Content.State, Index)
@@ -2486,13 +2468,17 @@ function sections:CreateDropdown(Properties)
 
 	function Content:Set(state, silent)
 		local Count = #Content.Options
-		local TargetState = tonumber(state) or 1
-		TargetState = math.clamp(math.floor(TargetState), 1, math.max(Count, 1))
+		local TargetState
+		if type(state) == "string" then
+			TargetState = table.find(Content.Options, state)
+		elseif type(state) == "number" then
+			TargetState = math.floor(state)
+		end
 		if Count <= 0 then
 			Content.State = 1
 			Outline_Frame_Title.Text = "-"
 		else
-			Content.State = TargetState
+			Content.State = math.clamp(TargetState or 1, 1, Count)
 			Outline_Frame_Title.Text = tostring(Content.Options[Content.State] or "-")
 		end
 		if not silent then
@@ -2649,16 +2635,16 @@ function sections:CreateMultibox(Properties)
 		while #CleanedIndices > Content.Maximum do
 			table.remove(CleanedIndices, #CleanedIndices)
 		end
-		if Content.Minimum > 0 then
+		if Content.Minimum > 0 and #CleanedIndices < Content.Minimum then
 			local PaddedIndex = 1
 			while #CleanedIndices < Content.Minimum and PaddedIndex <= #Content.Options do
 				if not SeenIndices[PaddedIndex] then
 					SeenIndices[PaddedIndex] = true
 					CleanedIndices[#CleanedIndices + 1] = PaddedIndex
-					table.sort(CleanedIndices)
 				end
 				PaddedIndex = PaddedIndex + 1
 			end
+			table.sort(CleanedIndices)
 		end
 		Content.State = CleanedIndices
 		Outline_Frame_Title.Text = Content:Serialise()
@@ -2681,9 +2667,7 @@ function sections:CreateMultibox(Properties)
 
 	BuildDropdownPopup(Content, Content_Holder_Outline, Outline_Frame_Title, Arrow_Image, true)
 	Content:Set(Content.State, true)
-	if Content.Name then
-		self.Window.Elements[Content.Name] = {Element = Content, Type = "Multibox"}
-	end
+	self.Window.Elements[Content.Name] = {Element = Content, Type = "Multibox"}
 	return Content
 end
 local Keys = {
@@ -2779,6 +2763,11 @@ function sections:CreateKeybind(Properties)
 			Content.State = {"KeyCode", "Insert"}
 		end
 	end
+	local function ResolveBound(State)
+		local EnumType = type(State[1]) == "string" and Enum[State[1]]
+		return (EnumType and EnumType[State[2]]) or nil
+	end
+	Content.Bound = ResolveBound(Content.State)
 	local Content_Holder = utility:RenderObject(Window, "Frame", {
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
@@ -2862,6 +2851,7 @@ function sections:CreateKeybind(Properties)
 			return false
 		end
 		Content.State = {TypeName, KeyName}
+		Content.Bound = ResolveBound(Content.State)
 		Outline_Frame_Value.Text = "<b>" .. Shorten(KeyName) .. "</b>"
 		if not Content.Holding then
 			Content.Callback({TypeName, KeyName})
@@ -2875,21 +2865,21 @@ function sections:CreateKeybind(Properties)
 				local TestEnum = Enum[state[1]]
 				if TestEnum and TestEnum[state[2]] then
 					Content.State = {state[1], state[2]}
+					Content.Bound = ResolveBound(Content.State)
 					Outline_Frame_Value.Text = "<b>" .. Shorten(state[2]) .. "</b>"
 				end
 			elseif state.type and state.value and Enum[state.type] and Enum[state.type][state.value] then
 				Content.State = {state.type, state.value}
+				Content.Bound = ResolveBound(Content.State)
 				Outline_Frame_Value.Text = "<b>" .. Shorten(state.value) .. "</b>"
 			end
 		elseif type(state) == "boolean" then
-			if Content.Mode == "Always" then
-				Content.Active = state
-			else
-				Content.Active = state
+			Content.Active = state
+			if Content.Mode ~= "Always" then
 				Content.Callback(state)
 			end
 		end
-			if not silent then
+		if not silent then
 			Content.Callback({Content.State[1], Content.State[2]})
 		end
 		Content:UpdateValueColor()
@@ -2914,33 +2904,27 @@ function sections:CreateKeybind(Properties)
 			end
 			return
 		end
-		if type(Content.State[1]) == "string" and type(Content.State[2]) == "string" then
-			local BoundEnum = Enum[Content.State[1]]
-			local Bound = BoundEnum and BoundEnum[Content.State[2]]
-			if Bound and (Input.KeyCode == Bound or Input.UserInputType == Bound) then
-				if Content.Mode == "Hold" then
-					Content.Active = true
-					Content:UpdateValueColor()
-					Content.Callback(true)
-				elseif Content.Mode == "Toggle" then
-					Content.Active = not Content.Active
-					Content:UpdateValueColor()
-					Content.Callback(Content.Active)
-				end
+		local Bound = Content.Bound
+		if Bound and (Input.KeyCode == Bound or Input.UserInputType == Bound) then
+			if Content.Mode == "Hold" then
+				Content.Active = true
+				Content:UpdateValueColor()
+				Content.Callback(true)
+			elseif Content.Mode == "Toggle" then
+				Content.Active = not Content.Active
+				Content:UpdateValueColor()
+				Content.Callback(Content.Active)
 			end
 		end
 	end
 
 	function Content:OnInputEnded(Input)
 		if Content.Mode == "Hold" and Content.Active then
-			if type(Content.State[1]) == "string" and type(Content.State[2]) == "string" then
-				local BoundEnum = Enum[Content.State[1]]
-				local Bound = BoundEnum and BoundEnum[Content.State[2]]
-				if Bound and (Input.KeyCode == Bound or Input.UserInputType == Bound) then
-					Content.Active = false
-					Content:UpdateValueColor()
-					Content.Callback(false)
-				end
+			local Bound = Content.Bound
+			if Bound and (Input.KeyCode == Bound or Input.UserInputType == Bound) then
+				Content.Active = false
+				Content:UpdateValueColor()
+				Content.Callback(false)
 			end
 		end
 	end
@@ -2959,9 +2943,7 @@ function sections:CreateKeybind(Properties)
 	end)
 
 	Content:UpdateValueColor()
-	if Content.Name then
-		self.Window.Elements[Content.Name] = {Element = Content, Type = "Keybind"}
-	end
+	self.Window.Elements[Content.Name] = {Element = Content, Type = "Keybind"}
 	table.insert(Window.Keybinds, Content)
 	table.insert(self.Window.AccentElements, {
 		Type = "Value",
@@ -3079,9 +3061,7 @@ function sections:CreateColorpicker(Properties)
 		Parts.DraggingHue = false
 		if WasDragging and PopupBuilt then
 			Content_HSV = {Parts.H, Parts.S, Parts.V}
-			pcall(function()
-				Content.Callback(Content.State)
-			end)
+			Content.Callback(Content.State)
 		end
 	end
 
@@ -3101,7 +3081,6 @@ function sections:CreateColorpicker(Properties)
 			Visible = false,
 			ZIndex = 100
 		})
-		Popup_Holder.Active = true
 		local Popup_Catcher = utility:RenderObject(Window, "TextButton", {
 			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 			BackgroundTransparency = 1,
@@ -3122,25 +3101,22 @@ function sections:CreateColorpicker(Properties)
 			Content:Close()
 		end)
 		Content.Catcher = Popup_Catcher
-		if not Content.GeometryCloseBound then
-			Content.GeometryCloseBound = true
-			utility:CreateConnection(Window, UserInputService.InputBegan, function(Input)
-				if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then return end
-				if not Content:IsOpen() then return end
-				Content._PressInside = nil
-				local Point = Vector2.new(Input.Position.X, Input.Position.Y)
-				local AP, AS = Popup_Holder.AbsolutePosition, Popup_Holder.AbsoluteSize
-				if Point.X >= AP.X and Point.X <= AP.X + AS.X and Point.Y >= AP.Y and Point.Y <= AP.Y + AS.Y then
-					Content._PressInside = true
-					return
-				end
-				local OP, OS = Content_Holder_Outline.AbsolutePosition, Content_Holder_Outline.AbsoluteSize
-				if Point.X >= OP.X and Point.X <= OP.X + OS.X and Point.Y >= OP.Y and Point.Y <= OP.Y + OS.Y then
-					return
-				end
-				Content:Close()
-			end)
-		end
+		utility:CreateConnection(Window, UserInputService.InputBegan, function(Input)
+			if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then return end
+			if not Content:IsOpen() then return end
+			Content._PressInside = nil
+			local Point = Vector2.new(Input.Position.X, Input.Position.Y)
+			local AP, AS = Popup_Holder.AbsolutePosition, Popup_Holder.AbsoluteSize
+			if Point.X >= AP.X and Point.X <= AP.X + AS.X and Point.Y >= AP.Y and Point.Y <= AP.Y + AS.Y then
+				Content._PressInside = true
+				return
+			end
+			local OP, OS = Content_Holder_Outline.AbsolutePosition, Content_Holder_Outline.AbsoluteSize
+			if Point.X >= OP.X and Point.X <= OP.X + OS.X and Point.Y >= OP.Y and Point.Y <= OP.Y + OS.Y then
+				return
+			end
+			Content:Close()
+		end)
 		local Popup_Outline = utility:RenderObject(Window, "Frame", {
 			BackgroundColor3 = Color3.fromRGB(12, 12, 12),
 			BackgroundTransparency = 0,
@@ -3397,9 +3373,10 @@ function sections:CreateColorpicker(Properties)
 	end
 
 	function Content:Reposition()
-		if not Popup_Holder or (not Popup_Holder.Visible and not Content._ScrollHidden) then return end
-		local OverlayAbs = Content.Page.Page.AbsolutePosition
-		local OverlaySize = Content.Page.Page.AbsoluteSize
+		local Overlay = Content.Page and Content.Page.Page
+		if not Popup_Holder or not Overlay or (not Popup_Holder.Visible and not Content._ScrollHidden) then return end
+		local OverlayAbs = Overlay.AbsolutePosition
+		local OverlaySize = Overlay.AbsoluteSize
 		local AnchorPos = Content_Holder_Outline.AbsolutePosition
 		local AnchorSize = Content_Holder_Outline.AbsoluteSize
 		local OverlayTop = OverlayAbs.Y
@@ -3444,6 +3421,7 @@ function sections:CreateColorpicker(Properties)
 
 	function Content:Open()
 		if Window.OpenContent == Content then return end
+		if not Popup_Holder then return end
 		Window:CloseOpenPopup()
 		Window.OpenContent = Content
 		BuildPopup()
@@ -3489,14 +3467,7 @@ function sections:CreateColorpicker(Properties)
 	end)
 
 	Content:Set(Content.State, true)
-	if Content.Name then
-		self.Window.Elements[Content.Name] = {Element = Content, Type = "Colorpicker"}
-	end
-	table.insert(self.Window.AccentElements, {
-		Type = "Colorpicker",
-		Element = Content,
-		Object = Holder_Swatch_Inner
-	})
+	self.Window.Elements[Content.Name] = {Element = Content, Type = "Colorpicker"}
 	return Content
 end
 
