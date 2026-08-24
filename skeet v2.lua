@@ -693,12 +693,14 @@ end
 
 function tabs:CreateSubTab(props)
 	local subName = Resolve(props, {"Name", "name", "Text", "text", "Title", "title"}, "Subtab")
+	local hidden = Resolve(props, {"Hidden", "hidden"}, false) == true
 	local owner = self.Window
 
 	local sub = setmetatable({}, subtabs)
 	sub.Tab = self
 	sub.Window = owner
 	sub.Active = false
+	sub.Hidden = hidden
 	sub.LeftCount = 0
 	sub.RightCount = 0
 
@@ -725,38 +727,57 @@ function tabs:CreateSubTab(props)
 		})
 	end
 
-	local textWidth = GetTextWidth(subName, 12, FONT)
+	if not hidden then
+		local textWidth = GetTextWidth(subName, 12, FONT)
 
-	sub.Button = Create("TextButton", {
-		BackgroundColor3 = Theme.ItemHover,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-		Text = "",
-		Size = UDim2.new(0, textWidth + 20, 0, 24),
-		LayoutOrder = #self.Subtabs + 1,
-		Parent = self.SubtabBar,
-	})
+		sub.Button = Create("TextButton", {
+			BackgroundColor3 = Theme.ItemHover,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Text = "",
+			Size = UDim2.new(0, textWidth + 20, 0, 24),
+			LayoutOrder = #self.Subtabs + 1,
+			Parent = self.SubtabBar,
+		})
 
-	sub.Label = Create("TextLabel", {
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 1, 0),
-		Font = FONT,
-		TextSize = 12,
-		Text = subName,
-		TextColor3 = Theme.TextDim,
-		Parent = sub.Button,
-	})
+		sub.Label = Create("TextLabel", {
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.new(1, 0, 1, 0),
+			Font = FONT,
+			TextSize = 12,
+			Text = subName,
+			TextColor3 = Theme.TextDim,
+			Parent = sub.Button,
+		})
 
-	sub.Underline = Create("Frame", {
-		BackgroundColor3 = library.Accent,
-		BorderSizePixel = 0,
-		Position = UDim2.new(0.5, -textWidth / 2, 1, -2),
-		Size = UDim2.new(0, textWidth, 0, 2),
-		Visible = false,
-		Parent = sub.Button,
-	})
+		sub.Underline = Create("Frame", {
+			BackgroundColor3 = library.Accent,
+			BorderSizePixel = 0,
+			Position = UDim2.new(0.5, -textWidth / 2, 1, -2),
+			Size = UDim2.new(0, textWidth, 0, 2),
+			Visible = false,
+			Parent = sub.Button,
+		})
+
+		Connect(owner, sub.Button.Activated, function()
+			sub:Select()
+		end)
+		Connect(owner, sub.Button.MouseEnter, function()
+			if not sub.Active then
+				sub.Button.BackgroundTransparency = 0
+				sub.Button.BackgroundColor3 = Theme.ItemHover
+				sub.Label.TextColor3 = Theme.TextHover
+			end
+		end)
+		Connect(owner, sub.Button.MouseLeave, function()
+			if not sub.Active then
+				sub.Button.BackgroundTransparency = 1
+				sub.Label.TextColor3 = Theme.TextDim
+			end
+		end)
+	end
 
 	sub.Content = Create("Frame", {
 		BackgroundTransparency = 1,
@@ -804,30 +825,22 @@ function tabs:CreateSubTab(props)
 		Parent = sub.RightColumn,
 	})
 
-	Connect(owner, sub.Button.Activated, function()
-		sub:Select()
-	end)
-	Connect(owner, sub.Button.MouseEnter, function()
-		if not sub.Active then
-			sub.Button.BackgroundTransparency = 0
-			sub.Button.BackgroundColor3 = Theme.ItemHover
-			sub.Label.TextColor3 = Theme.TextHover
-		end
-	end)
-	Connect(owner, sub.Button.MouseLeave, function()
-		if not sub.Active then
-			sub.Button.BackgroundTransparency = 1
-			sub.Label.TextColor3 = Theme.TextDim
-		end
-	end)
-
-	library:OnAccent(owner, function(color)
-		sub.Underline.BackgroundColor3 = color
-	end)
+	if sub.Underline then
+		library:OnAccent(owner, function(color)
+			sub.Underline.BackgroundColor3 = color
+		end)
+	end
 
 	table.insert(self.Subtabs, sub)
 
-	if #self.Subtabs > 1 then
+	local explicitCount = 0
+	for _, existing in ipairs(self.Subtabs) do
+		if not existing.Hidden then
+			explicitCount = explicitCount + 1
+		end
+	end
+
+	if explicitCount > 1 then
 		self.SubtabBar.Visible = true
 	end
 
@@ -838,15 +851,39 @@ function tabs:CreateSubTab(props)
 	return sub
 end
 
+function tabs:CreateGroupbox(props)
+	local hasExplicit = false
+	for _, sub in ipairs(self.Subtabs) do
+		if not sub.Hidden then
+			hasExplicit = true
+			break
+		end
+	end
+
+	local target
+	if hasExplicit then
+		target = self.ActiveSubtab or self.Subtabs[1]
+	else
+		if not self.DefaultSubtab then
+			self.DefaultSubtab = self:CreateSubTab({Name = "Default", Hidden = true})
+		end
+		target = self.DefaultSubtab
+	end
+
+	return target:CreateGroupbox(props)
+end
+
 function subtabs:Select()
 	local parentTab = self.Tab
 	for _, sub in ipairs(parentTab.Subtabs) do
 		local active = (sub == self)
 		sub.Active = active
 		sub.Content.Visible = active
-		sub.Button.BackgroundTransparency = 1
-		sub.Label.TextColor3 = active and Theme.Text or Theme.TextDim
-		sub.Underline.Visible = active
+		if sub.Button then
+			sub.Button.BackgroundTransparency = 1
+			sub.Label.TextColor3 = active and Theme.Text or Theme.TextDim
+			sub.Underline.Visible = active
+		end
 	end
 	parentTab.ActiveSubtab = self
 	if self.Window then
