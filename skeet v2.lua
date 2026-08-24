@@ -311,10 +311,13 @@ function library:CreateWindow(props)
 		Size = UDim2.new(1, -12, 0, 2),
 		Parent = self.Root,
 	})
-	rainbow.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Theme.RainbowA),
-		ColorSequenceKeypoint.new(0.5, Theme.RainbowB),
-		ColorSequenceKeypoint.new(1, Theme.RainbowC),
+	Create("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Theme.RainbowA),
+			ColorSequenceKeypoint.new(0.5, Theme.RainbowB),
+			ColorSequenceKeypoint.new(1, Theme.RainbowC),
+		}),
+		Parent = rainbow,
 	})
 
 	Create("Frame", {
