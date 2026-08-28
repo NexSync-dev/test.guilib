@@ -2180,7 +2180,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		local children = Popup_ScrollingFrame:GetChildren()
 		for _, Child in ipairs(children) do
 			if not (Child:IsA("UIListLayout") or Child:IsA("UIPadding")) then
-				utility:DestroyObject(Window, Child)
+				utility:DestroyObject(Child)
 			end
 		end
 		RowButtons = {}
