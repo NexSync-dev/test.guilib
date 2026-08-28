@@ -2369,7 +2369,8 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		if Multi then
 			Content:Set({}, true)
 		else
-			Content:Set(math.clamp(Content.State, 1, optionCount), true)
+			Content.State = math.clamp(Content.State, 1, optionCount)
+			Outline_Frame_Title.Text = optionCount > 0 and tostring(Content.Options[Content.State] or "-") or "-"
 		end
 	end
 	Content.SetOptions = Content.RefreshOptions
@@ -2475,19 +2476,26 @@ function sections:CreateDropdown(Properties)
 			TargetState = math.floor(state)
 		end
 		if Count <= 0 then
-			Content.State = 1
+			TargetState = 1
+		else
+			TargetState = math.clamp(TargetState or 1, 1, Count)
+		end
+		if Content.State == TargetState and Count > 0 then
+			return
+		end
+		Content.State = TargetState
+		if Count <= 0 then
 			Outline_Frame_Title.Text = "-"
 		else
-			Content.State = math.clamp(TargetState or 1, 1, Count)
 			Outline_Frame_Title.Text = tostring(Content.Options[Content.State] or "-")
 		end
 		if not silent then
-			Content.Callback(Content:Get())
+			Content.Callback(Content.State)
 		end
 	end
 
 	function Content:Get()
-		return Content.Options[Content.State]
+		return Content.State
 	end
 
 	utility:CreateConnection(Window, Content_Holder_Button.MouseButton1Click, function()
