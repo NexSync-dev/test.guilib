@@ -2136,7 +2136,7 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		ZIndex = 102
 	})
 	local Popup_ScrollingFrame = utility:RenderObject(Window, "ScrollingFrame", {
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		AutomaticCanvasSize = Enum.AutomaticSize.None,
 		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 		BackgroundTransparency = 1,
 		BorderColor3 = Color3.fromRGB(0, 0, 0),
@@ -2177,12 +2177,17 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 	end
 
 	local function BuildRows()
-		for _, Child in ipairs(Popup_ScrollingFrame:GetChildren()) do
-			if Child:IsA("TextButton") or Child:IsA("Frame") then
+		local children = Popup_ScrollingFrame:GetChildren()
+		for _, Child in ipairs(children) do
+			if not (Child:IsA("UIListLayout") or Child:IsA("UIPadding")) then
 				utility:DestroyObject(Window, Child)
 			end
 		end
 		RowButtons = {}
+		local canvasCount = #Content.Options
+		local canvasHeight = canvasCount * RowHeight + math.max(canvasCount - 1, 0) * RowSpacing + PopupPadding * 2
+		if canvasHeight < listHeight then canvasHeight = listHeight end
+		Popup_ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, canvasHeight)
 		for Index, Option in ipairs(Content.Options) do
 			local RowButton = utility:RenderObject(Window, "TextButton", {
 				AutoButtonColor = false,
@@ -2366,6 +2371,10 @@ local function BuildDropdownPopup(Content, Content_Holder_Outline, Title_Label, 
 		optionCount = math.max(#Content.Options, 1)
 		listHeight = math.min(optionCount, MaxVisible) * RowHeight + math.max(math.min(optionCount, MaxVisible) - 1, 0) * RowSpacing + PopupPadding * 2
 		Popup_Holder.Size = UDim2.new(0, Content_Holder_Outline.AbsoluteSize.X, 0, listHeight)
+		if Content:IsOpen() then
+			BuildRows()
+			Content:Reposition()
+		end
 		if Multi then
 			Content:Set({}, true)
 		else
@@ -2480,16 +2489,14 @@ function sections:CreateDropdown(Properties)
 		else
 			TargetState = math.clamp(TargetState or 1, 1, Count)
 		end
-		if Content.State == TargetState and Count > 0 then
-			return
-		end
+		local Changed = Content.State ~= TargetState
 		Content.State = TargetState
 		if Count <= 0 then
 			Outline_Frame_Title.Text = "-"
 		else
 			Outline_Frame_Title.Text = tostring(Content.Options[Content.State] or "-")
 		end
-		if not silent then
+		if not silent and Changed then
 			Content.Callback(Content.State)
 		end
 	end
